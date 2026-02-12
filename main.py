@@ -40,11 +40,6 @@ def menu():
                 print(f"❌ Falha no SOC: {res_soc.message if res_soc else 'Erro desconhecido'}")
                 excel = None
 
-            # --- LINHAS PARA TESTE MANUAL (Bypass do SOC) ---
-            # Se precisar testar apenas a validação e upload, comente o bloco acima e use as linhas abaixo:
-            # excel = "C:\\Users\\42706671840\\Documents\\Automacao_Atestados\\workspace\\Downloads\\Relatorio_licensas_medicas_16_01_2026.xlsx"
-            # excel = "\\\\10.1.1.50\\ADM_Cresst\\Atestados_Laudar\\22-01-2026\\Relatorio_licensas_medicas_22-01-2026_Copia.xlsx"
-
             if excel:
                 print(f"🔍 Iniciando validação do arquivo: {excel}")
                 output_op = processar_validacoes_excel(excel)
@@ -54,7 +49,7 @@ def menu():
                     
                     print(f"📤 Enviando para o Google Sheets...")
                     pasta_do_arquivo = os.path.dirname(caminho_validado)
-                    sheets.importar_excel_para_aba(pasta_do_arquivo, 'licensas_medicas')
+                    sheets.importar_excel_para_aba(pasta_do_arquivo)
                     print("✅ Processo SOC -> Sheets finalizado!")
                 else:
                     msg_erro = output_op.message if hasattr(output_op, 'message') else "Erro desconhecido"
@@ -65,7 +60,7 @@ def menu():
             atualizar_token_betha()
             betha = BethaService()
             
-            resultado = sheets.ler_planilha_para_automacao("licensas_medicas", 33)
+            resultado = sheets.ler_planilha_para_automacao(33)
             
             if not resultado:
                 print("ℹ️ Nenhum atestado pendente encontrado na planilha.")
@@ -98,7 +93,7 @@ def menu():
                     payload_envio = payload.copy()
                     payload_envio["numeroAtestado"] = None 
                     result = betha.enviar_atestado(payload_envio)
-                    status_envio = result.success if hasattr(result, 'success') else result
+                    status_envio = bool(result.success if hasattr(result, 'success') else (result.status_code == 200 if hasattr(result, 'status_code') else result))
 
                     if status_envio:
                         sheets.marcar_status_na_planilha(

@@ -58,25 +58,6 @@ class App(ctk.CTk):
         configurar_log_gui(self.log)
         self.montar_campos_config()
 
-    # def montar_campos_config(self):
-    #     """Constrói os campos de input na tela de configurações."""
-    #     ctk.CTkLabel(self.scroll_frame, text="Betha Cloud", font=ctk.CTkFont(weight="bold")).pack(pady=(10, 0))
-    #     self.entry_betha_user = ctk.CTkEntry(self.scroll_frame, placeholder_text="Login Betha", width=350)
-    #     self.entry_betha_user.pack(pady=5)
-    #     self.entry_betha_pass = ctk.CTkEntry(self.scroll_frame, placeholder_text="Senha Betha", show="*", width=350)
-    #     self.entry_betha_pass.pack(pady=5)
-
-    #     ctk.CTkLabel(self.scroll_frame, text="SOC Integration", font=ctk.CTkFont(weight="bold")).pack(pady=(20, 0))
-    #     self.entry_soc_user = ctk.CTkEntry(self.scroll_frame, placeholder_text="E-mail SOC", width=350)
-    #     self.entry_soc_user.pack(pady=5)
-    #     self.entry_soc_pass = ctk.CTkEntry(self.scroll_frame, placeholder_text="Senha SOC", show="*", width=350)
-    #     self.entry_soc_pass.pack(pady=5)
-    #     self.entry_soc_virt = ctk.CTkEntry(self.scroll_frame, placeholder_text="Senha Virtual (ex: 1,2,3,4)", width=350)
-    #     self.entry_soc_virt.pack(pady=5)
-
-    #     self.btn_save = ctk.CTkButton(self.scroll_frame, text="Salvar Credenciais", fg_color="#28a745", hover_color="#218838", command=self.salvar_dados)
-    #     self.btn_save.pack(pady=20)
-
     def montar_campos_config(self):
         """Constrói os campos garantindo que os inputs de 350px fiquem centralizados no eixo."""
         
@@ -88,9 +69,6 @@ class App(ctk.CTk):
         f_betha_pass = ctk.CTkFrame(self.scroll_frame, fg_color="transparent")
         f_betha_pass.pack(pady=5, fill="x")
         
-        # Coluna 0: Espaço invisível para equilibrar (mesma largura do botão)
-        # Coluna 1: O Input centralizado
-        # Coluna 2: O Botão real
         f_betha_pass.grid_columnconfigure(0, weight=1) 
         f_betha_pass.grid_columnconfigure(2, weight=1) 
         
@@ -137,9 +115,6 @@ class App(ctk.CTk):
         f_proxy_pass = ctk.CTkFrame(self.scroll_frame, fg_color="transparent")
         f_proxy_pass.pack(pady=5, fill="x")
         
-        # Coluna 0: Espaço invisível para equilibrar (mesma largura do botão)
-        # Coluna 1: O Input centralizado
-        # Coluna 2: O Botão real
         f_proxy_pass.grid_columnconfigure(0, weight=1) 
         f_proxy_pass.grid_columnconfigure(2, weight=1) 
         
@@ -254,11 +229,10 @@ class App(ctk.CTk):
 
     def run_soc(self):
         try:
-            res_soc = executar_fluxo_soc()
-            if res_soc and res_soc.success:
-            # if True:
-                excel = res_soc.data
-                # excel = "\\\\10.1.1.50\\ADM_Cresst\\Atestados_Laudar\\22-01-2026\\Relatorio_licensas_medicas_22-01-2026.xlsx"
+            # res_soc = executar_fluxo_soc()
+            # if res_soc and res_soc.success:
+                excel = r"\\10.1.1.50\ADM_Cresst\Atestados_Laudar\11-02-2026\Relatorio_licensas_medicas_11-02-2026.xlsx"
+                # excel = res_soc.data
                 self.log(f"🔍 Validando arquivo: {os.path.basename(excel)}")
                 
                 output_op = processar_validacoes_excel(excel)
@@ -266,12 +240,12 @@ class App(ctk.CTk):
                     caminho_validado = output_op.data
                     self.log("📤 Importando para Google Sheets...")
                     pasta = os.path.dirname(caminho_validado)
-                    sheets.importar_excel_para_aba(pasta, 'licensas_medicas')
+                    sheets.importar_excel_para_aba(pasta)
                     self.log("✅ Processo SOC -> Sheets concluído!")
                 else:
                     self.log(f"❌ Erro na validação: {output_op.message}")
-            else:
-                self.log(f"❌ Falha no SOC: {res_soc.message if res_soc else 'Erro de conexão'}")
+            # else:
+                # self.log(f"❌ Falha no SOC: {res_soc.message if res_soc else 'Erro de conexão'}")
         except Exception as e: self.log(f"💥 Erro no SOC: {e}")
 
     def thread_envio(self):
@@ -293,7 +267,7 @@ class App(ctk.CTk):
             atualizar_token_betha()
             betha = BethaService()
 
-            resultado_bruto = sheets.ler_planilha_para_automacao("licensas_medicas", linha_inicio)
+            resultado_bruto = sheets.ler_planilha_para_automacao(linha_inicio)
             if not resultado_bruto:
                 self.log("ℹ️ Nenhum dado pendente encontrado.")
                 return

@@ -197,15 +197,29 @@ class BethaService:
                     "numeroAtestado": cod_ficha,
                     "tipo": { "id": id_tipo_atestado }, 
                     "motivoConsultaMedica": { "id": id_motivo },
+                    "deferido": True,
                     "tipoAfastamento": { "id": id_tipo_afastamento } if id_tipo_afastamento else None,
                     "profissional": { "id": id_profissional } if id_profissional else None, 
                     "cidPrincipal": { "id": id_cid } if id_cid else None,   
                     "cids": [ { "id": id_cid } ] if id_cid else [],
                     "inseridoPeloRh": True,
-                    "localAtendimento": "AMBULATORIO",
+                    "localAtendimento": "CLINICA",
                     "geradoApartirDeAfastamento": bool(id_tipo_afastamento),
                     "dataEntrega": f"{data_ini} 08:00:00" if data_ini else None,
-                    "anexos": lista_anexos
+                    "anexos": lista_anexos,
+                    "ausencia": {
+                        "matricula": { "id": id_betha },
+                        "tipo": {
+                            "id": 8541, 
+                            "descricao": "Licença Médica",
+                            "classificacao": "CONSULTA_MEDICA"
+                        },
+                        "dataInicial": data_ini,
+                        "dataFinal": data_fim,
+                        "abonar": True,
+                        "inseridoPeloRh": True,
+                        "observacao": "Ausência gerada por atestado"
+                    }
                 }
                 
                 if payload["inicioAtestado"] and payload["fimAtestado"]:
@@ -350,7 +364,7 @@ class BethaService:
                 proxies=PROXIES_OFF
             )
             
-            if response.status_code in [200, 201, 202, 204]:
+            if response.status_code in [200]:
                 return OperationResult.ok(f"Enviado com sucesso!", data=response.json() if response.text else {})
 
             if response.status_code == 400:
@@ -359,6 +373,8 @@ class BethaService:
 
             if response.status_code in [401, 403]:
                 return OperationResult.fail("🔑 Token Betha expirado ou sem permissão para esta matrícula.")
+            else:
+                return OperationResult.fail("❌ Erro de Validação Betha")
 
             response.raise_for_status()
 

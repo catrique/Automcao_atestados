@@ -1,27 +1,26 @@
 import os
 import sys
+import time
 import gspread
 import pandas as pd
 from google.auth.transport.requests import Request
 import unicodedata
 from oauth2client.service_account import ServiceAccountCredentials
+from config.loaders import get_config
 from services.utils_service import OperationResult, ErrorTranslator
 from services.utils_service import obter_identificacao_usuario
 from services.utils_service import logger
 from config_network import PROXIES_OFF
+NOME_ABA = get_config("google_sheets", "aba")
 
 class SheetsService:
     def __init__(self, nome_planilha):
-        # 1. Lógica para encontrar a pasta _internal no executável
         if getattr(sys, 'frozen', False):
-            # No executável, sys._MEIPASS aponta para a pasta onde os arquivos são extraídos
             self.RAIZ_PROJETO = sys._MEIPASS
         else:
-            # No VS Code (script .py)
             diretorio_atual = os.path.dirname(os.path.abspath(__file__))
             self.RAIZ_PROJETO = os.path.dirname(diretorio_atual)
 
-        # 2. Caminho para o credentials.json dentro de _internal/config
         self.PATH_TO_JSON = os.path.join(self.RAIZ_PROJETO, "config", "credentials.json")
         
         logger.info(f"🔍 Conectando à planilha via: {self.PATH_TO_JSON}")
@@ -59,16 +58,16 @@ class SheetsService:
         df.columns = [c.replace('.', '_') for c in df.columns]
         return df
 
-    def obter_aba(self, nome_aba):
+    def obter_aba(self, aba = NOME_ABA):
         try:
-            return self.planilha.worksheet(nome_aba)
+            return self.planilha.worksheet(aba)
         except:
             return None
 
-    def ler_planilha_para_automacao(self, nome_aba, linha_inicio):
+    def ler_planilha_para_automacao(self, linha_inicio):
         """Lê a aba a partir de uma linha específica para uso no Selenium."""
         try:
-            aba = self.obter_aba(nome_aba)
+            aba = self.obter_aba()
             cabecalho = aba.row_values(1)
             dados = aba.get_all_values()[linha_inicio-1:] 
 
@@ -81,7 +80,7 @@ class SheetsService:
             logger.info(f"❌ Erro ao ler planilha para automação: {e}")
             return []
         
-    def atualizar_aba_com_json(self, nome_aba, dados_content) -> OperationResult:
+    def atualizar_aba_com_json(self, aba_de_controle, dados_content) -> OperationResult:
         """Sobrescreve uma aba com dados da API."""
         try:
             if not dados_content: return OperationResult.fail("Nenhum dado recebido para atualizar.")
@@ -89,53 +88,21 @@ class SheetsService:
             df = self.achatar_json(dados_content).fillna('')
             dados_com_cabecalho = [df.columns.values.tolist()] + df.values.tolist()
             
-            aba = self.obter_aba(nome_aba)
+            aba = self.obter_aba(aba=aba_de_controle)
             if not aba:
-                aba = self.planilha.add_worksheet(title=nome_aba, rows="100", cols="20")
+                aba = self.planilha.add_worksheet(title=aba_de_controle, rows="100", cols="20")
             
             aba.clear()
             aba.update('A1', dados_com_cabecalho, value_input_option='RAW')
             
-            if nome_aba in self._cache_abas: del self._cache_abas[nome_aba]
-            return OperationResult.ok(f"✅ Aba '{nome_aba}' atualizada com sucesso.")
+            if aba_de_controle in self._cache_abas: del self._cache_abas[aba_de_controle]
+            return OperationResult.ok(f"✅ Aba '{aba_de_controle}' atualizada com sucesso.")
         except Exception as e:
             return ErrorTranslator.traduzir(e)
 
-    # def importar_excel_para_aba(self, diretorio_excel, nome_aba) -> OperationResult:
-    #     """Importa o Excel mais recente para a planilha."""
-    #     try:
-    #         if not os.path.exists(diretorio_excel):
-    #             return OperationResult.fail(f"📂 Pasta não encontrada: {diretorio_excel}")
-
-    #         arquivos = sorted([f for f in os.listdir(diretorio_excel) if f.endswith(('.xlsx', '.xls'))], reverse=True)
-    #         if not arquivos: 
-    #             return OperationResult.fail("🔍 Nenhum arquivo Excel encontrado na pasta.")
-
-    #         caminho_excel = os.path.join(diretorio_excel, arquivos[0])
-    #         pular = 4 if caminho_excel.endswith('.xls') else 0
-    #         df = pd.read_excel(caminho_excel, skiprows=pular)
-    #         df = df.loc[:, ~df.columns.astype(str).str.contains('^Unnamed')].dropna(axis=1, how='all').fillna('')
-
-    #         for col in df.select_dtypes(include=['datetime']).columns:
-    #             df[col] = df[col].dt.strftime('%d/%m/%Y')
-
-    #         aba = self.obter_aba(nome_aba)
-    #         if not aba:
-    #             return OperationResult.fail(f"❌ Aba '{nome_aba}' não existe na planilha.")
-
-    #         dados = df.values.tolist()
-    #         if not aba.acell('A1').value:
-    #             aba.update('A1', [df.columns.values.tolist()] + dados, value_input_option='RAW')
-    #         else:
-    #             aba.append_rows(dados, value_input_option='RAW')
-            
-    #         if nome_aba in self._cache_abas: del self._cache_abas[nome_aba]
-    #         return OperationResult.ok(f"✅ Excel '{arquivos[0]}' importado com sucesso!")
-    #     except Exception as e:
-    #         return ErrorTranslator.traduzir(e)
-
-    def importar_excel_para_aba(self, diretorio_excel, nome_aba) -> OperationResult:
+    def importar_excel_para_aba(self, diretorio_excel) -> OperationResult:
         """Importa o Excel para a planilha a partir da primeira linha onde as colunas chave estão vazias."""
+        
         try:
             if not os.path.exists(diretorio_excel):
                 return OperationResult.fail(f"📂 Pasta não encontrada: {diretorio_excel}")
@@ -152,9 +119,9 @@ class SheetsService:
             for col in df_novo.select_dtypes(include=['datetime']).columns:
                 df_novo[col] = df_novo[col].dt.strftime('%d/%m/%Y')
 
-            aba = self.obter_aba(nome_aba)
+            aba = self.obter_aba()
             if not aba:
-                return OperationResult.fail(f"❌ Aba '{nome_aba}' não existe.")
+                return OperationResult.fail(f"❌ Aba '{NOME_ABA}' não existe.")
 
             dados_sheets = aba.get_all_values()
             
@@ -184,16 +151,16 @@ class SheetsService:
                 range_inicio = f"A{proxima_linha}"
                 aba.update(range_inicio, corpo_dados, value_input_option='RAW')
 
-            if nome_aba in self._cache_abas: del self._cache_abas[nome_aba]
+            if NOME_ABA in self._cache_abas: del self._cache_abas[NOME_ABA]
             return OperationResult.ok(f"✅ Excel importado na linha {proxima_linha}!")
 
         except Exception as e:
             return ErrorTranslator.traduzir(e)
 
-    def obter_mapa_validacao(self, nome_aba, coluna_chave, coluna_valor):
+    def obter_mapa_validacao(self, aba, coluna_chave, coluna_valor):
         """Gera um dicionário de DE-PARA de uma aba."""
         try:
-            aba = self.obter_aba(nome_aba)
+            aba = self.obter_aba(aba=aba)
             dados = aba.get_all_records()
             return {str(item.get(coluna_chave, "")).strip().split('.')[0]: 
                     "".join(c for c in str(item.get(coluna_valor, "")) if c.isprintable()) 
@@ -202,16 +169,16 @@ class SheetsService:
             logger.info(f"❌ Erro ao gerar mapa: {e}")
             return {}
 
-    def buscar_id(self, nome_aba, codigo_busca, col_codigo, nome_busca=None, col_nome=None):
+    def buscar_id(self, aba, codigo_busca, col_codigo, nome_busca=None, col_nome=None):
         """
         Busca o ID (Coluna A) na aba informada. 
         Usa cache para não baixar a aba a cada consulta.
         """
-        if nome_aba not in self._cache_abas:
-            aba = self.obter_aba(nome_aba)
-            self._cache_abas[nome_aba] = aba.get_all_values() if aba else []
+        if aba not in self._cache_abas:
+            aba = self.obter_aba(aba=aba)
+            self._cache_abas[NOME_ABA] = aba.get_all_values() if aba else []
 
-        dados = self._cache_abas[nome_aba]
+        dados = self._cache_abas[NOME_ABA]
         if not dados: return None
 
         cabecalho = dados[0]
@@ -233,12 +200,14 @@ class SheetsService:
         return None
       
 
-    def marcar_status_na_planilha(self, id_busca, nome_aba="testes_caled", col_referencia="Código Ficha Clínica", erro=False) -> OperationResult:
+    def marcar_status_na_planilha(self, id_busca, col_referencia="Código Ficha Clínica", erro=False) -> OperationResult:
         """Marca status, responsável, IP e horário na linha correta do Google Sheets."""
+        NOME_ABA = get_config("google_sheets", "aba")
+        
         try:
-            aba_instancia = self.obter_aba(nome_aba)
+            aba_instancia = self.obter_aba()
             if not aba_instancia:
-                return OperationResult.fail(f"⚠️ Aba '{nome_aba}' não encontrada.")
+                return OperationResult.fail(f"⚠️ Aba '{NOME_ABA}' não encontrada.")
             dados_brutos = aba_instancia.get_all_values()
             if not dados_brutos:
                 return OperationResult.fail("A planilha está vazia.")
@@ -273,8 +242,8 @@ class SheetsService:
                 else:
                     logger.info(f"⚠️ Coluna '{nome_coluna}' não encontrada na aba.")
 
-            if hasattr(self, '_cache_abas') and nome_aba in self._cache_abas:
-                del self._cache_abas[nome_aba]
+            if hasattr(self, '_cache_abas') and NOME_ABA in self._cache_abas:
+                del self._cache_abas[NOME_ABA]
                 
             return OperationResult.ok(f"Status e rastreio atualizados para a ficha {id_busca_str}.")
 

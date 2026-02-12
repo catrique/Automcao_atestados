@@ -14,15 +14,7 @@ from config.loaders import reload_settings, get_config
 class DataUpdater:
     def __init__(self):
         self.base_url = get_config('betha','api','base_url')
-        # self.auth_token = get_config('betha','api','authorization')
-        # self.user_access = get_config('betha','api','user_access')
         self.endpoints = get_config('betha','api','endpoints')
-
-        # self.headers = {
-        #     "Authorization": self.auth_token,
-        #     "user-access": self.user_access,
-        #     "Content-Type": "application/json"
-        # }
 
         self.FILTROS = {
             "medico": 'filter=(nome+like+"%2525%2525"+and+profissao+=+"MEDICO")',
@@ -47,7 +39,7 @@ class DataUpdater:
     def _executar_requisicao(self, url):
         """Faz a chamada GET e lança exceções para o tradutor capturar."""
         response = requests.get(url, headers=self.headers, timeout=3, proxies=PROXIES_OFF)
-        response.raise_for_status() # Isso dispara o erro para o try/except pai
+        response.raise_for_status()
         return response.json()
 
     def buscar_dados(self, chave_endpoint):
@@ -92,7 +84,6 @@ def sincronizar_bases_betha():
     """
     Agora retorna um OperationResult para o gui.py tratar.
     """
-    NOME_PLANILHA = "Atestados"
     tarefas = {
         "CID": updater.cids,
         "MEDICOS": updater.medicos,
@@ -115,5 +106,5 @@ def sincronizar_bases_betha():
         return OperationResult.ok("✅ Todas as bases foram sincronizadas com sucesso!")
 
     except Exception as e:
-        mensagem_amigavel = ErrorTranslator.traduzir(e)
-        return OperationResult.fail(mensagem_amigavel)
+        erro= ErrorTranslator.traduzir(e)
+        return OperationResult.fail(erro)
