@@ -229,10 +229,10 @@ class App(ctk.CTk):
 
     def run_soc(self):
         try:
-            # res_soc = executar_fluxo_soc()
-            # if res_soc and res_soc.success:
-                excel = r"\\10.1.1.50\ADM_Cresst\Atestados_Laudar\11-02-2026\Relatorio_licensas_medicas_11-02-2026.xlsx"
-                # excel = res_soc.data
+            res_soc = executar_fluxo_soc()
+            if res_soc and res_soc.success:
+                # excel = r"\\10.1.1.50\ADM_Cresst\Atestados_Laudar\11-02-2026\Relatorio_licensas_medicas_11-02-2026.xlsx"
+                excel = res_soc.data
                 self.log(f"🔍 Validando arquivo: {os.path.basename(excel)}")
                 
                 output_op = processar_validacoes_excel(excel)
