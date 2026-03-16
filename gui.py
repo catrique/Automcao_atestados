@@ -174,12 +174,10 @@ class App(ctk.CTk):
         ):
             entry.delete(0, "end")
 
-        # --- garantir que campos de senha voltem a ficar ocultos ---
         self.entry_betha_pass.configure(show="*")
         self.entry_soc_pass.configure(show="*")
         self.entry_proxy_pass.configure(show="*")
 
-        # --- resetar texto dos botões "olho", se existirem ---
         if hasattr(self, "btn_eye_betha"):
             self.btn_eye_betha.configure(text="Mostrar")
         if hasattr(self, "btn_eye_soc"):
@@ -187,7 +185,6 @@ class App(ctk.CTk):
         if hasattr(self, "btn_eye_proxy"):
             self.btn_eye_proxy.configure(text="Mostrar")
 
-        # --- ação final existente ---
         self.mostrar_console()
 
     def confirmar_envio(self):
@@ -231,7 +228,6 @@ class App(ctk.CTk):
         try:
             res_soc = executar_fluxo_soc()
             if res_soc and res_soc.success:
-                # excel = r"\\10.1.1.50\ADM_Cresst\Atestados_Laudar\11-02-2026\Relatorio_licensas_medicas_11-02-2026.xlsx"
                 excel = res_soc.data
                 self.log(f"🔍 Validando arquivo: {os.path.basename(excel)}")
                 
@@ -244,8 +240,6 @@ class App(ctk.CTk):
                     self.log("✅ Processo SOC -> Sheets concluído!")
                 else:
                     self.log(f"❌ Erro na validação: {output_op.message}")
-            # else:
-                # self.log(f"❌ Falha no SOC: {res_soc.message if res_soc else 'Erro de conexão'}")
         except Exception as e: self.log(f"💥 Erro no SOC: {e}")
 
     def thread_envio(self):

@@ -15,13 +15,11 @@ from config.loaders import get_config
 class BethaService:
 
     def __init__(self):
-        # Não precisamos mais de self.path aqui, o loader cuida disso
         self.headers = {}
         self.inicializado = False
         self.erro_inicializacao = ""
 
         try:
-            # Buscamos os valores diretamente usando nossa função dinâmica
             authorization = get_config("betha", "api", "authorization")
             user_access = get_config("betha", "api", "user_access")
 

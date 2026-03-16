@@ -62,14 +62,11 @@ def atualizar_token_betha() -> OperationResult:
         if not os.path.exists(pasta_temp):
             os.makedirs(pasta_temp, exist_ok=True)
 
-        # 2. Configura a variável de ambiente do WebDriver Manager
-        # Isso força o download para a pasta TEMP sem usar argumentos inválidos no __init__
-        os.environ['WDM_LOCAL'] = '0' # Garante que não tente usar a pasta do EXE
-        os.environ['WDM_PATH'] = pasta_temp # Define a raiz do cache
+        os.environ['WDM_LOCAL'] = '0' 
+        os.environ['WDM_PATH'] = pasta_temp 
 
         logger.info(f"🚗 Verificando driver em: {pasta_temp}")
         
-        # 3. Instala o driver (agora sem o argumento 'path' que deu erro)
         driver_path = ChromeDriverManager().install()
         
         service = Service(driver_path)

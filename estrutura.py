@@ -12,7 +12,7 @@ def gerar_estrutura_txt(diretorio_raiz, arquivo_saida):
                 f.write(f"{sub_indentacao}{arquivo}\n")
 
 if __name__ == "__main__":
-    diretorio = r"C:/Users/42706671840/Documents/Automacao_Atestados"   # ajuste o caminho
+    diretorio = r"C:/Users/42706671840/Documents/Automacao_Atestados"  
     saida_txt = "estrutura_diretorio.txt"
     gerar_estrutura_txt(diretorio, saida_txt)
     print("Arquivo TXT gerado com sucesso.")

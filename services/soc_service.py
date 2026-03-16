@@ -39,7 +39,7 @@ class SOCService:
             service = Service(ChromeDriverManager().install())
             options = webdriver.ChromeOptions()
             options.add_argument("--start-maximized")
-            # options.add_argument("--headless") # Descomente para rodar escondido
+            options.add_argument("--disable-notifications")
             
             prefs = {
                 "download.default_directory": os.path.abspath(output_dir),
@@ -47,19 +47,55 @@ class SOCService:
                 "download.directory_upgrade": True,
                 "safebrowsing.enabled": True,
                 "plugins.always_open_pdf_externally": True,
-                "profile.default_content_setting_values.automatic_downloads": 1
+                "profile.default_content_setting_values.automatic_downloads": 1,
+                "profile.default_content_setting_values.notifications": 2
             }
             options.add_experimental_option("prefs", prefs)
             
             self.driver = webdriver.Chrome(service=service, options=options)
-            self.wait = WebDriverWait(self.driver, 40) # Timeout de 40s é seguro
+            self.wait = WebDriverWait(self.driver, 40)
             return OperationResult.ok("Driver inicializado.")
         except Exception as e:
             return OperationResult.fail(f"❌ Falha ao iniciar Chrome: {str(e)}")
 
-    def login(self, usuario, senha_texto, senha_virtual_clicks) -> OperationResult:
-        """Realiza login com captura de erros de credenciais ou sistema."""
+    # def login(self, usuario, senha_texto, senha_virtual_clicks) -> OperationResult:
+    #     """Realiza login com captura de erros de credenciais ou sistema."""
         
+    #     try:
+    #         logger.info(f"🔐 Acessando SOC: {self.url_soc}")
+    #         self.driver.get(self.url_soc)
+    #         configurar_e_autenticar_proxy()
+            
+    #         try:
+    #             self.wait.until(EC.presence_of_element_located((By.ID, "bt_entrar")))
+    #         except:
+    #             return OperationResult.fail("⏳ O site do SOC demorou muito para responder.")
+
+    #         self.driver.find_element(By.ID, "usu").send_keys(usuario)
+    #         self.driver.find_element(By.ID, "senha").send_keys(senha_texto)
+    #         self.driver.find_element(By.ID, "empsoc").click()
+            
+    #         self.wait.until(EC.visibility_of_element_located((By.ID, "teclado")))
+    #         for val in senha_virtual_clicks:
+    #             botao = self.driver.find_element(By.XPATH, f"//div[@id='teclado']//input[@value='{val}']")
+    #             botao.click()
+    #             time.sleep(0.3)
+
+    #         self.driver.find_element(By.ID, "bt_entrar").click()
+    #         self.wait.until(EC.url_changes(self.url_soc))
+            
+    #         time.sleep(5)
+    #         if self.wait.until(EC.url_changes(self.url_soc)) is False:
+    #              return OperationResult.fail("❌ Falha no Login: Usuário, Senha ou Teclado Virtual incorretos.")
+
+    #         logger.info("✅ Login realizado com sucesso.")
+    #         return OperationResult.ok("Login realizado.")
+            
+    #     except Exception as e:
+    #         return ErrorTranslator.traduzir(e)
+
+    def login(self, usuario, senha_texto, senha_virtual_clicks) -> OperationResult:
+        """Realiza login e aguarda a confirmação real da entrada no sistema."""
         try:
             logger.info(f"🔐 Acessando SOC: {self.url_soc}")
             self.driver.get(self.url_soc)
@@ -81,26 +117,37 @@ class SOCService:
                 time.sleep(0.3)
 
             self.driver.find_element(By.ID, "bt_entrar").click()
-            self.wait.until(EC.url_changes(self.url_soc))
-            
-            time.sleep(5)
-            if self.wait.until(EC.url_changes(self.url_soc)) is False:
-                 return OperationResult.fail("❌ Falha no Login: Usuário, Senha ou Teclado Virtual incorretos.")
 
-            logger.info("✅ Login realizado com sucesso.")
-            return OperationResult.ok("Login realizado.")
+            timeout_login = 60 
+            start_time = time.time()
+            
+            while time.time() - start_time < timeout_login:
+                if self.driver.find_elements(By.ID, "g-recaptcha") or self.driver.find_elements(By.CLASS_NAME, "captcha-modal"):
+                    logger.warning("⚠️ CAPTCHA detectado! Aguardando resolução manual...")
+                    time.sleep(2)
+                    continue
+
+                if self.driver.find_elements(By.CSS_SELECTOR, "a.menu-icon"):
+                    logger.info("✅ Login confirmado: Elemento da home detectado.")
+                    return OperationResult.ok("Login realizado com sucesso.")
+
+                time.sleep(1)
+
+            return OperationResult.fail("❌ Timeout: O login não foi concluído após 60 segundos.")
             
         except Exception as e:
             return ErrorTranslator.traduzir(e)
-
+    
     def navegar_para_tela(self, cod_tela) -> OperationResult:
         """Navega entre frames com segurança."""
         try:
-            time.sleep(2)
             self.driver.switch_to.default_content()
-            time.sleep(1)
-                
-            search_program = self.wait.until(EC.element_to_be_clickable((By.ID, "cod_programa")))
+            btn_menu = self.wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, "a.menu-icon[data-target='slide-out']")))
+            self.driver.execute_script("arguments[0].click();", btn_menu)
+            self.wait.until(EC.visibility_of_element_located((By.CSS_SELECTOR, ".sidenav-overlay[style*='opacity: 1']")))
+            time.sleep(0.5)
+
+            search_program = self.wait.until(EC.element_to_be_clickable((By.ID, "ipt-text-busca-programa-menu")))
             self.driver.execute_script("arguments[0].scrollIntoView(true);", search_program)
             search_program.click()
             search_program.send_keys(Keys.CONTROL + "a")
@@ -621,42 +668,88 @@ class SOCService:
         self.fechar()
 
 
-    def configurar_periodo(self, data_inicio=None, data_fim=None) -> OperationResult:
-        """
-        Configura o período de datas no relatório e retorna OperationResult.
-        """
-        try:
-            if not data_inicio or not data_fim:
-                hoje = datetime.now()
-                dia_da_semana = hoje.weekday()
+    # def configurar_periodo(self, data_inicio=None, data_fim=None) -> OperationResult:
+    #     """
+    #     Configura o período de datas no relatório e retorna OperationResult.
+    #     """
+    #     try:
+    #         if not data_inicio or not data_fim:
+    #             hoje = datetime.now()
+    #             dia_da_semana = hoje.weekday()
 
-                if dia_da_semana == 0:  
-                    inicio_dt = hoje - timedelta(days=3)
-                    fim_dt = hoje - timedelta(days=1)
-                else:
-                    inicio_dt = hoje - timedelta(days=1)
-                    fim_dt = hoje - timedelta(days=1)
+    #             if dia_da_semana == 0:  
+    #                 inicio_dt = hoje - timedelta(days=3)
+    #                 fim_dt = hoje - timedelta(days=1)
+    #             else:
+    #                 inicio_dt = hoje - timedelta(days=1)
+    #                 fim_dt = hoje - timedelta(days=1)
 
-                data_inicio = inicio_dt.strftime("%d/%m/%Y")
-                data_fim = fim_dt.strftime("%d/%m/%Y")
+    #             data_inicio = inicio_dt.strftime("%d/%m/%Y")
+    #             data_fim = fim_dt.strftime("%d/%m/%Y")
 
-            logger.info(f"📅 Configurando período: {data_inicio} até {data_fim}")
+    #         logger.info(f"📅 Configurando período: {data_inicio} até {data_fim}")
 
-            data_inicial = self.wait.until(EC.presence_of_element_located((By.ID, "dataInicioPeriodo")))
-            data_final = self.wait.until(EC.presence_of_element_located((By.ID, "dataFimPeriodo")))
+    #         data_inicial = self.wait.until(EC.presence_of_element_located((By.ID, "dataInicioPeriodo")))
+    #         data_final = self.wait.until(EC.presence_of_element_located((By.ID, "dataFimPeriodo")))
 
-            self.driver.execute_script("arguments[0].value = arguments[1];", data_inicial, data_inicio)
-            self.driver.execute_script("arguments[0].value = arguments[1];", data_final, data_fim)
+    #         self.driver.execute_script("arguments[0].value = arguments[1];", data_inicial, data_inicio)
+    #         self.driver.execute_script("arguments[0].value = arguments[1];", data_final, data_fim)
             
-            self.driver.execute_script("arguments[0].dispatchEvent(new Event('change'));", data_inicial)
-            self.driver.execute_script("arguments[0].dispatchEvent(new Event('change'));", data_final)
+    #         self.driver.execute_script("arguments[0].dispatchEvent(new Event('change'));", data_inicial)
+    #         self.driver.execute_script("arguments[0].dispatchEvent(new Event('change'));", data_final)
 
-            return OperationResult.ok(f"Período configurado: {data_inicio} - {data_fim}", data={"inicio": data_inicio, "fim": data_fim})
+    #         return OperationResult.ok(f"Período configurado: {data_inicio} - {data_fim}", data={"inicio": data_inicio, "fim": data_fim})
 
-        except Exception as e:
-            logger.info(f"❌ Erro ao configurar datas: {e}")
-            return ErrorTranslator.traduzir(e)
+    #     except Exception as e:
+    #         logger.info(f"❌ Erro ao configurar datas: {e}")
+    #         return ErrorTranslator.traduzir(e)
 
+
+def configurar_periodo(self, data_inicio=None, data_fim=None) -> OperationResult:
+    """Configura o período de datas lidando com componentes Datepicker."""
+    try:
+        if not data_inicio or not data_fim:
+            hoje = datetime.now()
+            if hoje.weekday() == 0:  
+                inicio_dt = hoje - timedelta(days=3)
+                fim_dt = hoje - timedelta(days=1)
+            else:
+                inicio_dt = hoje - timedelta(days=1)
+                fim_dt = hoje - timedelta(days=1)
+            data_inicio = inicio_dt.strftime("%d/%m/%Y")
+            data_fim = fim_dt.strftime("%d/%m/%Y")
+
+        logger.info(f"📅 Configurando período: {data_inicio} até {data_fim}")
+
+        data_inicial = self.wait.until(EC.visibility_of_element_located((By.ID, "dataInicioPeriodo")))
+        data_final = self.wait.until(EC.visibility_of_element_located((By.ID, "dataFimPeriodo")))
+
+        script_set_date = """
+            arguments[0].removeAttribute('readonly');
+            arguments[0].value = '';
+            arguments[0].value = arguments[1];
+            arguments[0].dispatchEvent(new Event('focus'));
+            arguments[0].dispatchEvent(new Event('input'));
+            arguments[0].dispatchEvent(new Event('change'));
+            arguments[0].dispatchEvent(new Event('blur'));
+        """
+        
+        self.driver.execute_script(script_set_date, data_inicial, data_inicio)
+        self.driver.execute_script(script_set_date, data_final, data_fim)
+
+        try:
+            self.driver.find_element(By.TAG_NAME, "body").click()
+        except:
+            pass
+
+        return OperationResult.ok(
+            f"Período configurado: {data_inicio} - {data_fim}", 
+            data={"inicio": data_inicio, "fim": data_fim}
+        )
+
+    except Exception as e:
+        logger.error(f"❌ Erro ao configurar datas: {e}")
+        return ErrorTranslator.traduzir(e)
 
 def gerar_relatorio_licensas_medicas(
     url_soc, usuario, senha_texto, senha_virtual_clicks, 
@@ -675,7 +768,7 @@ def gerar_relatorio_licensas_medicas(
             
             res_login = soc.login(usuario, senha_texto, senha_virtual_clicks)
             if not res_login.success: return res_login
-            
+            time.sleep(5)
             soc.navegar_para_tela('237')
             soc.configurar_periodo(data_inicio, data_fim)
             soc.selecionar_tipo_relatorio()
@@ -684,11 +777,9 @@ def gerar_relatorio_licensas_medicas(
             
             tempo_total = 45
             for i in range(tempo_total):
-                # sys.stdout.write(f"\rCronômetro: {i+1} segundos")
                 segundos = i +1
                 if segundos % 10 == 0 or segundos == 1:
                     logger.info(f"⏳ Aguardando download... ({segundos}s passados)")
-                # sys.stdout.flush()
                 time.sleep(1)
             logger.info("✅ Tempo de espera finalizado!")
             soc.navegar_para_tela('271')

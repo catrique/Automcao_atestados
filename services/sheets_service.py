@@ -143,7 +143,7 @@ class SheetsService:
                         proxima_linha = 2 
                     else:
                         ultima_preenchida_idx = preenchidos[preenchidos].index[-1]
-                        proxima_linha = ultima_preenchida_idx + 3 # +1 (index 0), +1 (header), +1 (próxima)
+                        proxima_linha = ultima_preenchida_idx + 3 
 
                 corpo_dados = df_novo.values.tolist()
 
@@ -222,7 +222,7 @@ class SheetsService:
             if not indices:
                 return OperationResult.fail(f"ID '{id_busca_str}' não localizado.")
 
-            linha_sheets = int(indices[0]) + 2 # +1 do header, +1 porque Sheets começa em 1
+            linha_sheets = int(indices[0]) + 2 
 
             info_usuario = obter_identificacao_usuario()
             
