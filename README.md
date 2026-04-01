@@ -88,7 +88,6 @@ Automcao_atestados/
 ├── estrutura.py                   # Dataclasses e estruturas de dados compartilhadas
 ├── config_global.py               # Instâncias globais (ex: objeto `sheets`)
 ├── gui.py                         # ▶  Ponto de entrada — Interface gráfica
-├── main.py                        # Ponto de entrada alternativo (CLI/legado)
 ├── .gitignore
 └── README.md
 ```
