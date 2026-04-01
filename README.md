@@ -85,7 +85,6 @@ Automcao_atestados/
 │   ├── utils_service.py           # Utilitários gerais (log, formatação etc.)
 │   └── validation_service.py      # Validação e sanitização dos dados Excel
 │
-├── estrutura.py                   # Dataclasses e estruturas de dados compartilhadas
 ├── config_global.py               # Instâncias globais (ex: objeto `sheets`)
 ├── gui.py                         # ▶  Ponto de entrada — Interface gráfica
 ├── .gitignore
