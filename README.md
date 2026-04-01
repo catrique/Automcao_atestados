@@ -255,10 +255,7 @@ Exibe em tempo real o log de todas as operações com timestamps, emojis de stat
 Para distribuir o sistema sem necessidade de Python instalado:
 
 ```bash
-pyinstaller --noconfirm --onefile --windowed \
-            --add-data "config;config" \
-            --name "AutomacaoAtestados" \
-            gui.py
+pyinstaller --noconfirm --onefile --windowed --add-data "config;config" --name "AutomacaoAtestados" gui.py
 ```
 
 O executável será gerado em `dist/AutomacaoAtestados.exe`.
