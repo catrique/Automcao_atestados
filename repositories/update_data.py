@@ -1,3 +1,5 @@
+import re
+
 import requests
 import sys
 import os
@@ -22,7 +24,8 @@ class DataUpdater:
             "tipo_afastamento": 'filter=(descricao+like+"%2525%2525")',
             "tipo_atestado": 'filter=(descricao+like+"%2525%2525")',
             "motivo_consulta": 'filter=(descricao+like+"%2525%2525")',
-            "pessoa_juridica": 'filter=(razaoSocial+like+"%2525%2525"+and+tipo+in+("GERAL","OPERADORA_PLANO_SAUDE"))'
+            "pessoa_juridica": 'filter=(razaoSocial+like+"%2525%2525"+and+tipo+in+("GERAL","OPERADORA_PLANO_SAUDE"))',
+            "listagem_matricula": 'filtroSituacao=ATIVOS'
         }
 
     @property
@@ -38,7 +41,7 @@ class DataUpdater:
 
     def _executar_requisicao(self, url):
         """Faz a chamada GET e lança exceções para o tradutor capturar."""
-        response = requests.get(url, headers=self.headers, timeout=3, proxies=PROXIES_OFF)
+        response = requests.get(url, headers=self.headers, timeout=60, proxies=PROXIES_OFF)
         response.raise_for_status()
         return response.json()
 
@@ -77,6 +80,31 @@ class DataUpdater:
     def tipos_atestado(self): return self.buscar_dados('tipo_atestado')
     def motivos_consulta(self): return self.buscar_dados('motivo_consulta')
     def pessoas_juridicas(self): return self.buscar_dados('pessoa_juridica')
+    def servidores(self):
+        raw_data = self.buscar_dados('listagem_matricula')
+        
+        dados_formatados = []
+        for item in raw_data:
+            pessoa = item.get('pessoa') or {}
+            cargo = item.get('cargo') or {}
+            matricula_info = item.get('matriculaLotacaoFisica') or {}
+            lotacao_fisica = matricula_info.get('lotacaoFisica') or {}
+            vinculo = item.get('vinculoEmpregaticio') or {}
+            raw_vinculo = str(vinculo.get('descricao') or "NÃO INFORMADO")
+            vinculo_limpo = re.sub(r'^\d+\s*-\s*', '', raw_vinculo).strip()
+            linha = {
+                "Id": pessoa.get('id'),
+                "Matricula": item.get('numeroCartaoPonto') or item.get('descricao'),
+                "Nome": pessoa.get('nome'),
+                "Vínculo": vinculo_limpo,
+                "CPF": pessoa.get('cpf'),
+                "Cargo": cargo.get('descricao') or "NÃO INFORMADO",
+                "Organograma": lotacao_fisica.get('descricao') or "SEM LOTAÇÃO",
+                "Data_inicio": matricula_info.get('dataInicio')
+            }
+            dados_formatados.append(linha)
+        
+        return dados_formatados
 
 updater = DataUpdater()
 
@@ -90,7 +118,8 @@ def sincronizar_bases_betha():
         "TIPOS_AFASTAMENTO": updater.tipos_afastamento,
         "TIPOS_ATESTADO": updater.tipos_atestado,
         "MOTIVO_CONSULTA": updater.motivos_consulta,
-        "EMPRESAS": updater.pessoas_juridicas
+        "EMPRESAS": updater.pessoas_juridicas,
+        "SERVIDORES": updater.servidores
     }
 
     try:

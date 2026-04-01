@@ -25,6 +25,10 @@ def limpar_cid(cid):
     if not cid or pd.isna(cid): return ""
     return re.sub(r'[^a-zA-Z0-9]', '', str(cid)).lower()
 
+def limpar_cpf(cpf):
+    """Remove pontuação do CPF para comparação (ex: 123.456.789-00 -> 12345678900)."""
+    if not cpf or pd.isna(cpf): return ""
+    return re.sub(r'[^0-9]', '', str(cpf))
 
 def validar_medico_crm(df, mapa_medicos):
     """Valida médico e CRM, adicionando erros à lista da linha."""
@@ -72,9 +76,69 @@ def validar_cid(df, set_cids_validos):
 
     return erros_resultado, total_erros
 
+def validar_duplicidade_matricula(df_excel, df_servidores):
+    """
+    Verifica se o CPF do Excel possui mais de um vínculo (matrícula) na aba SERVIDORES.
+    """
+    total_erros = 0
+    erros_resultado = []
+
+    contagem_servidores = {}
+    
+    if not df_servidores.empty:
+        col_cpf_ref = None
+        for col in ['cpf', 'CPF', 'Cpf']:
+            if col in df_servidores.columns:
+                col_cpf_ref = col
+                break
+        
+        if col_cpf_ref:
+            serie_cpfs_limpos = df_servidores[col_cpf_ref].apply(limpar_cpf)
+            contagem_servidores = serie_cpfs_limpos.value_counts().to_dict()
+        else:
+            logger.error("⚠️ Coluna 'cpf' não encontrada na aba SERVIDORES")
+
+    for idx, row in df_excel.iterrows():
+        erro_msg = None
+        cpf_valor = row.get("CPF") or row.get("C.P.F") or row.get("cpf") or row.get("Cpf")
+        cpf_limpo_excel = limpar_cpf(cpf_valor)
+
+        if cpf_limpo_excel:
+            qtd_na_base = contagem_servidores.get(cpf_limpo_excel, 0)
+            if qtd_na_base > 1:
+                erro_msg = f"Servidor possui {qtd_na_base} matriculas"
+                total_erros += 1
+        
+        erros_resultado.append(erro_msg)
+
+    return erros_resultado, total_erros
+
+def validar_vinculo_matricula(df_excel, df_servidores):
+    """
+    Busca o vínculo na aba SERVIDORES baseado na Matrícula do Excel.
+    Retorna uma lista com os vínculos encontrados para atualizar o DataFrame.
+    """
+    mapa_vinculos = {
+        str(row['Matricula']).strip(): str(row['Vínculo']).strip()
+        for _, row in df_servidores.iterrows()
+        if 'Matricula' in row and 'Vínculo' in row
+    }
+
+    vinculos_resultado = []
+
+    for _, row in df_excel.iterrows():
+        matricula_excel = str(row.get("Matrícula Funcionário") or "").strip()
+        vinculo_encontrado = mapa_vinculos.get(matricula_excel)
+        if vinculo_encontrado:
+            vinculos_resultado.append(vinculo_encontrado)
+        else:
+            vinculos_resultado.append(row.get("Vínculo") or "")
+            
+    return vinculos_resultado
+
 def processar_validacoes_excel(caminho_excel) -> OperationResult:
     """
-    Orquestra as validações e salva no Excel. Retorna OperationResult.
+    Orquestra as validações (Médico, CID e Múltiplos Vínculos) e salva no Excel.
     """
     try:
         if not os.path.exists(caminho_excel):
@@ -84,9 +148,11 @@ def processar_validacoes_excel(caminho_excel) -> OperationResult:
 
         mapa_medicos_bruto = sheets.obter_mapa_validacao("MEDICOS", "numeroConselho", "nome")
         mapa_cid_bruto = sheets.obter_mapa_validacao("CID", "codigo", "descricao")
+        
+        df_servidores_ref = sheets.obter_coluna_aba("SERVIDORES")
 
-        if not mapa_medicos_bruto or not mapa_cid_bruto:
-             return OperationResult.fail("📊 Falha ao carregar bases de validação da planilha. Verifique a conexão.")
+        if not mapa_medicos_bruto or not mapa_cid_bruto or df_servidores_ref.empty:
+             logger.warning("⚠️ Alguma base de validação não pôde ser carregada completamente.")
 
         mapa_medicos_ref = {}
         for crm, nome_bruto in mapa_medicos_bruto.items():
@@ -108,21 +174,29 @@ def processar_validacoes_excel(caminho_excel) -> OperationResult:
             return OperationResult.fail(f"🚫 O arquivo '{os.path.basename(caminho_excel)}' está aberto. Feche-o para validar.")
 
         df.columns = df.columns.str.strip()
-
+        df["Vínculo"] = validar_vinculo_matricula(df, df_servidores_ref)
         lista_erros_medico, count_m = validar_medico_crm(df, mapa_medicos_ref)
         lista_erros_cid, count_c = validar_cid(df, set_cids_ref)
+        lista_erros_matricula, count_mat = validar_duplicidade_matricula(df, df_servidores_ref)
 
         erros_finais = []
-        for e_med, e_cid in zip(lista_erros_medico, lista_erros_cid):
-            erros_da_linha = [e for e in [e_med, e_cid] if e] 
-            erros_finais.append(" | ".join(erros_da_linha))
+        for e_med, e_cid, e_mat in zip(lista_erros_medico, lista_erros_cid, lista_erros_matricula):
+            erros_da_linha = [e for e in [e_med, e_cid, e_mat] if e] 
+            erros_finais.append(" | ".join(erros_da_linha) if erros_da_linha else "")
 
-        df["ERROS"] = erros_finais
-
-        df.to_excel(caminho_excel, index=False)
+        df["ERROS_VALIDACAO"] = erros_finais
         
-        msg_sucesso = f"✅ Validação concluída! Médico: {count_m} erros | CID: {count_c} erros."
-        return OperationResult.ok(msg_sucesso, data=caminho_excel)
+        try:
+            df.to_excel(caminho_excel, index=False)
+        except Exception as e:
+            return OperationResult.fail(f"Erro ao salvar arquivo validado: {str(e)}")
+
+        total_problemas = count_m + count_c + count_mat
+        if total_problemas > 0:
+            return OperationResult.ok(f"Validação concluída: {total_problemas} alertas encontrados.", data=caminho_excel)
+        
+        return OperationResult.ok("Planilha validada com sucesso! Nenhum problema encontrado.", data=caminho_excel)
 
     except Exception as e:
-        return ErrorTranslator.traduzir(e)
+        logger.error(f"Erro crítico na validação: {e}")
+        return OperationResult.fail(f"Erro ao validar: {str(e)}")

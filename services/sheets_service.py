@@ -64,6 +64,23 @@ class SheetsService:
         except:
             return None
 
+    def obter_coluna_aba(self, nome_aba, intervalo=None):
+        """Retorna os dados de uma aba específica como DataFrame para validação."""
+        try:
+            aba = self.obter_aba(aba=nome_aba)
+            if not aba:
+                return pd.DataFrame()
+            
+            dados = aba.get_all_values()
+            if len(dados) < 2: 
+                return pd.DataFrame()
+
+            df = pd.DataFrame(dados[1:], columns=dados[0])
+            return df
+        except Exception as e:
+            logger.error(f"❌ Erro ao obter aba {nome_aba}: {e}")
+            return pd.DataFrame()
+        
     def ler_planilha_para_automacao(self, linha_inicio):
         """Lê a aba a partir de uma linha específica para uso no Selenium."""
         try:
@@ -172,42 +189,48 @@ class SheetsService:
     def buscar_id(self, aba, codigo_busca, col_codigo, nome_busca=None, col_nome=None):
         """
         Busca o ID (Coluna A) na aba informada. 
-        Usa cache para não baixar a aba a cada consulta.
+        Usa cache por aba para evitar downloads repetitivos.
         """
         if aba not in self._cache_abas:
-            aba = self.obter_aba(aba=aba)
-            self._cache_abas[NOME_ABA] = aba.get_all_values() if aba else []
+            aba_instancia = self.obter_aba(aba=aba)
+            self._cache_abas[aba] = aba_instancia.get_all_values() if aba_instancia else []
 
-        dados = self._cache_abas[NOME_ABA]
-        if not dados: return None
+        dados = self._cache_abas[aba]
+        if not dados: 
+            return None
 
         cabecalho = dados[0]
         try:
             idx_cod = cabecalho.index(col_codigo)
             idx_nome = cabecalho.index(col_nome) if col_nome else None
-        except: return None
+        except ValueError: 
+            logger.info(f"⚠️ Coluna {col_codigo} ou {col_nome} não encontrada na aba {aba}")
+            return None
 
         alvo_cod = str(codigo_busca).replace(".", "").strip().lower()
         alvo_nome = self._limpar_texto(nome_busca) if nome_busca else None
 
         for linha in dados[1:]:
-            if str(linha[idx_cod]).replace(".", "").strip().lower() == alvo_cod:
+            if len(linha) <= idx_cod:
+                continue
+                
+            valor_celula_cod = str(linha[idx_cod]).replace(".", "").strip().lower()
+            
+            if valor_celula_cod == alvo_cod:
                 if alvo_nome and idx_nome is not None:
-                    if self._limpar_texto(linha[idx_nome]) == alvo_nome:
-                        return linha[0]
+                    if len(linha) > idx_nome and self._limpar_texto(linha[idx_nome]) == alvo_nome:
+                        return linha[0] 
                 else:
-                    return linha[0]
+                    return linha[0] 
         return None
-      
 
-    def marcar_status_na_planilha(self, id_busca, col_referencia="Código Ficha Clínica", erro=False) -> OperationResult:
-        """Marca status, responsável, IP e horário na linha correta do Google Sheets."""
-        NOME_ABA = get_config("google_sheets", "aba")
-        
+    def marcar_status_na_planilha(self, id_busca, mensagem_status="ENVIADO", col_referencia="Código Ficha Clínica") -> OperationResult:
+        """Marca o status customizado, responsável, IP e horário no Google Sheets."""
         try:
             aba_instancia = self.obter_aba()
             if not aba_instancia:
-                return OperationResult.fail(f"⚠️ Aba '{NOME_ABA}' não encontrada.")
+                return OperationResult.fail(f"⚠️ Aba não encontrada.")
+                
             dados_brutos = aba_instancia.get_all_values()
             if not dados_brutos:
                 return OperationResult.fail("A planilha está vazia.")
@@ -223,13 +246,10 @@ class SheetsService:
                 return OperationResult.fail(f"ID '{id_busca_str}' não localizado.")
 
             linha_sheets = int(indices[0]) + 2 
-
             info_usuario = obter_identificacao_usuario()
             
-            status_texto = "❌ ERRO NO ENVIO" if erro else "✅ ENVIADO"
-            
             atualizacoes = {
-                "Status": f"{status_texto}",
+                "Status": mensagem_status, 
                 "Nome do responsável pelo envio": info_usuario['usuario'].upper(),
                 "Ip do responsavel pelo envio": info_usuario['ip'],
                 "Horário do envio": info_usuario['horario']
@@ -239,16 +259,16 @@ class SheetsService:
                 if nome_coluna in cabecalhos:
                     col_idx = cabecalhos.index(nome_coluna) + 1
                     aba_instancia.update_cell(linha_sheets, col_idx, valor)
-                else:
-                    logger.info(f"⚠️ Coluna '{nome_coluna}' não encontrada na aba.")
 
-            if hasattr(self, '_cache_abas') and NOME_ABA in self._cache_abas:
-                del self._cache_abas[NOME_ABA]
+            if hasattr(self, '_cache_abas'):
+                self._cache_abas.clear() 
                 
-            return OperationResult.ok(f"Status e rastreio atualizados para a ficha {id_busca_str}.")
+            return OperationResult.ok(f"Status atualizado para: {mensagem_status}")
 
         except Exception as e:
-            try:
-                return ErrorTranslator.traduzir(e)
-            except:
-                return OperationResult.fail(f"Erro ao marcar status: {str(e)}")
+            return OperationResult.fail(f"Erro ao marcar status: {str(e)}")
+
+
+
+
+

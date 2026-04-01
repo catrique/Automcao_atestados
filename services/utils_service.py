@@ -6,6 +6,9 @@ from datetime import datetime
 import logging
 from config_network import PROXIES_OFF
 
+_limpar_log_func = None
+
+
 class OperationResult:
     def __init__(self, success, message, data=None):
         self.success = success
@@ -19,6 +22,7 @@ class OperationResult:
     @staticmethod
     def fail(message):
         return OperationResult(False, message)
+
 
 class ErrorTranslator:
     @staticmethod
@@ -34,26 +38,26 @@ class ErrorTranslator:
         if isinstance(e, requests.exceptions.Timeout):
             return "⏳ A Betha demorou muito para responder (Timeout)."
         return f"⚠️ Erro inesperado: {str(e)[:100]}"
-    
+
 
 def obter_identificacao_usuario():
     """Retorna um dicionário com Nome/Login, IP e Horário do sistema."""
     dados = {
         "usuario": "USUARIO",
         "ip": "0.0.0.0",
-        "horario": datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+        "horario": datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
     }
 
     try:
         buffer = ctypes.create_unicode_buffer(100)
         tamanho = ctypes.pointer(ctypes.c_uint32(100))
-        
+
         if ctypes.windll.secur32.GetUserNameExW(3, buffer, tamanho) and buffer.value:
             dados["usuario"] = buffer.value
         else:
             dados["usuario"] = os.getlogin()
     except:
-        dados["usuario"] = os.environ.get('USERNAME', 'USUARIO')
+        dados["usuario"] = os.environ.get("USERNAME", "USUARIO")
 
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -64,15 +68,18 @@ def obter_identificacao_usuario():
         try:
             dados["ip"] = socket.gethostbyname(socket.gethostname())
         except:
-            pass 
+            pass
 
     return dados
+
 
 logger = logging.getLogger("AutomacaoRH")
 logger.setLevel(logging.INFO)
 
+
 class GuiHandler(logging.Handler):
     """Handler que redireciona logs para a função da GUI."""
+
     def __init__(self, log_func):
         super().__init__()
         self.log_func = log_func
@@ -81,12 +88,31 @@ class GuiHandler(logging.Handler):
         msg = self.format(record)
         self.log_func(msg)
 
+
 def configurar_log_gui(funcao_log_gui):
-    """Ativa o envio de logs para a GUI."""
+    """Ativa o envio de logs para a GUI, evitando duplicatas."""
+    if logger.hasHandlers():
+        logger.handlers.clear()
+        
     gui_handler = GuiHandler(funcao_log_gui)
     gui_handler.setFormatter(logging.Formatter('%(message)s'))
     logger.addHandler(gui_handler)
+    
+    logger.addHandler(console_handler)
+
 
 console_handler = logging.StreamHandler()
-console_handler.setFormatter(logging.Formatter('[%(levelname)s] %(message)s'))
+console_handler.setFormatter(logging.Formatter("[%(levelname)s] %(message)s"))
 logger.addHandler(console_handler)
+
+
+def registrar_limpar_gui(funcao):
+    """Registra a função da GUI que limpa o console."""
+    global _limpar_log_func
+    _limpar_log_func = funcao
+
+
+def limpar_console():
+    """Chama a limpeza do console se a função estiver registrada."""
+    if _limpar_log_func:
+        _limpar_log_func()

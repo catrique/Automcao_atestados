@@ -1,2 +1,9 @@
 /config/settings.json
 /config/credentials.json
+__pycache__/
+build/
+dist/
+
+*.spec
+main.py
+services/atestado.json

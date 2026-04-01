@@ -58,42 +58,6 @@ class SOCService:
         except Exception as e:
             return OperationResult.fail(f"❌ Falha ao iniciar Chrome: {str(e)}")
 
-    # def login(self, usuario, senha_texto, senha_virtual_clicks) -> OperationResult:
-    #     """Realiza login com captura de erros de credenciais ou sistema."""
-        
-    #     try:
-    #         logger.info(f"🔐 Acessando SOC: {self.url_soc}")
-    #         self.driver.get(self.url_soc)
-    #         configurar_e_autenticar_proxy()
-            
-    #         try:
-    #             self.wait.until(EC.presence_of_element_located((By.ID, "bt_entrar")))
-    #         except:
-    #             return OperationResult.fail("⏳ O site do SOC demorou muito para responder.")
-
-    #         self.driver.find_element(By.ID, "usu").send_keys(usuario)
-    #         self.driver.find_element(By.ID, "senha").send_keys(senha_texto)
-    #         self.driver.find_element(By.ID, "empsoc").click()
-            
-    #         self.wait.until(EC.visibility_of_element_located((By.ID, "teclado")))
-    #         for val in senha_virtual_clicks:
-    #             botao = self.driver.find_element(By.XPATH, f"//div[@id='teclado']//input[@value='{val}']")
-    #             botao.click()
-    #             time.sleep(0.3)
-
-    #         self.driver.find_element(By.ID, "bt_entrar").click()
-    #         self.wait.until(EC.url_changes(self.url_soc))
-            
-    #         time.sleep(5)
-    #         if self.wait.until(EC.url_changes(self.url_soc)) is False:
-    #              return OperationResult.fail("❌ Falha no Login: Usuário, Senha ou Teclado Virtual incorretos.")
-
-    #         logger.info("✅ Login realizado com sucesso.")
-    #         return OperationResult.ok("Login realizado.")
-            
-    #     except Exception as e:
-    #         return ErrorTranslator.traduzir(e)
-
     def login(self, usuario, senha_texto, senha_virtual_clicks) -> OperationResult:
         """Realiza login e aguarda a confirmação real da entrada no sistema."""
         try:
@@ -155,7 +119,7 @@ class SOCService:
             search_program.send_keys(cod_tela)
             search_program.send_keys(Keys.ENTER)
             time.sleep(1)
-            self.wait.until(EC.frame_to_be_available_and_switch_to_it((By.ID, "socframe")))
+            self.wait.until(EC.frame_to_be_available_and_switch_to_it((By.ID, "novosocFrame")))
             return OperationResult.ok(f"Tela {cod_tela} acessada.")
         except Exception as e:
             return OperationResult.fail(f"❌ Não foi possível acessar a tela {cod_tela}.")
@@ -349,7 +313,7 @@ class SOCService:
                 return OperationResult.fail(f"⚠️ Funcionário {codigo_limpo} não encontrado na listagem.")
 
         except Exception as e:
-            return ErrorTranslator.traduzir(e)
+            return OperationResult.fail(f"❌ Erro ao buscar funcionário: {str(e)[:150]}")
 
     def obter_dados_ficha(self) -> OperationResult:
         """Captura todos os dados da ficha de uma vez (Sequencial, Médico, CID)."""
@@ -393,7 +357,7 @@ class SOCService:
         """
         Baixa os anexos de um atestado gerenciando janelas e downloads dinâmicos.
         """
-        frame_id = "socframe"
+        frame_id = "novosocFrame"
 
         try:
             data_string = str(data_ficha)[:10]
@@ -488,6 +452,8 @@ class SOCService:
         try:
             df = pd.read_excel(caminho_excel, skiprows=4)
             df.columns = df.columns.str.strip()
+
+            novo_caminho = caminho_excel.replace('.xls', '.xlsx')
             
             for col in ['Médico assistente', 'CRM Médico assistente', 'CID', 'Pasta de anexos']:
                 if col not in df.columns:
@@ -497,20 +463,20 @@ class SOCService:
             
             lista_funcionarios = [c for c in df['Código Funcionário'].unique() if str(c).lower() not in ['nan', 'nat', '']]
             total_func = len(lista_funcionarios)
-
             for i, cod_func in enumerate(lista_funcionarios):
                 logger.info(f"\n👥 [{i+1}/{total_func}] Processando Funcionário: {cod_func}")
                 
-                res_busca = self.buscar_funcionario_por_codigo(cod_func)
-                if not res_busca.success:
-                    logger.info(f"⚠️ Pulando funcionário {cod_func}: {res_busca.message}")
-                    continue
-                    
                 fichas_do_func = df[df['Código Funcionário'] == cod_func]
-                indices_web_clicados = set() 
+                indices_web_clicados = set()
 
                 for index_excel, row in fichas_do_func.iterrows():
                     try:
+                        self.navegar_para_tela('1084')
+                        res_busca = self.buscar_funcionario_por_codigo(cod_func)
+                        if not res_busca.success:
+                            logger.info(f"⚠️ Pulando ficha {index_excel} do funcionário {cod_func}: {res_busca.message}")
+                            continue
+
                         def formatar_data(v):
                             if pd.isna(v) or str(v).strip().lower() in ['nan', 'nat', '']: return ""
                             try: return pd.to_datetime(v, dayfirst=True).strftime('%d/%m/%Y')
@@ -521,18 +487,17 @@ class SOCService:
                         data_a = formatar_data(row['Data de Afastamento (até)'])
                         nome_func = row['Nome Funcionário']
                         cod_ficha_excel = row['Código Ficha Clínica']
-                        
-                        logger.info(f"🔎 Buscando na Web: Ficha {data_f} | Início {data_i}")
 
+                        logger.info(f"🔎 Buscando na Web: Ficha {data_f} | Início {data_i}")
                         self.wait.until(EC.presence_of_element_located((By.ID, "tabelaFichas")))
                         linhas_web = self.driver.find_elements(By.XPATH, "//table[@id='tabelaFichas']//tr[td]")
-                        
+
                         linha_alvo_index = -1
                         for idx, tr in enumerate(linhas_web):
                             if idx in indices_web_clicados: continue
-                            
+
                             texto_linha = tr.text.replace('\n', ' ').strip()
-                            
+
                             match_ficha = data_f in texto_linha
                             match_inicio = data_i in texto_linha
                             match_tipo = 'Atestado' in texto_linha
@@ -541,22 +506,21 @@ class SOCService:
                             if match_ficha and match_inicio and match_fim and match_tipo:
                                 linha_alvo_index = idx
                                 break
-                        
+
                         if linha_alvo_index != -1:
                             logger.info(f"🎯 Correspondência encontrada na linha web {linha_alvo_index}")
-                            
-                            
+
                             link = linhas_web[linha_alvo_index].find_element(By.XPATH, ".//a[contains(@class, 'llinha2')]")
                             self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", link)
                             self.driver.execute_script("arguments[0].click();", link)
                             indices_web_clicados.add(linha_alvo_index)
-
                             self.wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "span[data-alterado-grava-tela='inputMedico_nomeSolicitante']")))
-                           
+
                             dados_medico = self.obter_medico_assistente()
                             cid_v = self.obter_cid_principal()
-                            anexos_dir = self.download_anexos_atestado(nome_func, cod_ficha_excel, data_f, output_dir)
 
+                            identificador_atestado = str(cod_ficha_excel)
+                            anexos_dir = self.download_anexos_atestado(nome_func, identificador_atestado, data_f, output_dir)
                             if anexos_dir.success:
                                 caminho_para_planilha = anexos_dir.data
                             else:
@@ -567,21 +531,21 @@ class SOCService:
                             df.at[index_excel, 'CRM Médico assistente'] = dados_medico.get('crm', '')
                             df.at[index_excel, 'CID'] = cid_v
                             df.at[index_excel, 'Pasta de anexos'] = caminho_para_planilha
-                            
-                            logger.info(f"✅ Sucesso: {caminho_para_planilha}")
 
-                            self.driver.back()
-                            self.driver.switch_to.default_content()
-                            self.wait.until(EC.frame_to_be_available_and_switch_to_it((By.ID, "socframe")))
-                            self.wait.until(EC.presence_of_element_located((By.ID, "tabelaFichas")))
+                            logger.info(f"✅ Sucesso: {caminho_para_planilha}")
                         else:
                             logger.info(f"❌ Ficha não encontrada na tabela web.")
-                        self.navegar_para_tela('1084')
 
                     except Exception as e:
                         logger.info(f"⚠️ Erro na ficha {index_excel}: {e}")
-                
-            novo_caminho = caminho_excel.replace('.xls', '.xlsx')
+                        self.navegar_para_tela('1084')  
+
+
+
+
+
+
+
             df.to_excel(novo_caminho, index=False)
             return OperationResult.ok("Processamento concluído com sucesso!", data=novo_caminho)
 
@@ -651,10 +615,80 @@ class SOCService:
         except:
             return str(valor).strip()
 
+    def _clicar_botao_consultar(self) -> OperationResult:
+        """
+        Clica no botão de lupa (Consultar) para voltar à tela de busca de funcionário.
+        Funciona tanto na tela de ficha quanto na listagem de fichas.
+        """
+        try:
+            btn = WebDriverWait(self.driver, 10).until(
+                EC.element_to_be_clickable((By.XPATH, "//a[contains(@href, \"doAcao('browse')\")]"))
+            )
+            self.driver.execute_script("arguments[0].click();", btn)
+            self.wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "input[name='nomeSeach']")))
+            logger.info("🔙 Voltou para tela de busca via botão Consultar.")
+            return OperationResult.ok("Voltou para busca.")
+        except Exception as e:
+            return OperationResult.fail(f"⚠️ Botão Consultar não encontrado: {e}")
+
+    def _voltar_para_busca_e_reabrir_vazio(self) -> bool:
+        """
+        Clica no botão Consultar (lupa) para voltar à tela de busca de funcionário,
+        deixando o campo em branco. A busca do próximo funcionário é feita separadamente.
+        Fallback: navega para tela 1084 via menu.
+        Retorna True se chegou na tela de busca, False se falhou.
+        """
+        try:
+            btn = WebDriverWait(self.driver, 10).until(
+                EC.element_to_be_clickable((By.XPATH, "//a[contains(@href, \"doAcao('browse')\")]"))
+            )
+            self.driver.execute_script("arguments[0].click();", btn)
+            self.wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "input[name='nomeSeach']")))
+            logger.info("🔙 Tela de busca pronta para próxima ficha.")
+            return True
+        except Exception:
+            logger.info("⚠️ Fallback: navegando para tela 1084...")
+            try:
+                self.navegar_para_tela('1084')
+                self.wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "input[name='nomeSeach']")))
+                return True
+            except Exception as e:
+                logger.info(f"❌ Não foi possível voltar para tela de busca: {e}")
+                return False
+
+    def _voltar_para_busca_e_reabrir(self, cod_func: str) -> bool:
+        """
+        Garante que o driver está na tela de busca de funcionário e faz
+        a busca completa (digita código + pesquisa + clica no funcionário).
+        Tenta: botão Consultar → se falhar, navega para tela 1084.
+        Retorna True se chegou na listagem de fichas, False se falhou.
+        """
+        res = self._clicar_botao_consultar()
+        if not res.success:
+            logger.info("⚠️ Fallback: navegando para tela 1084...")
+            try:
+                self.navegar_para_tela('1084')
+                self.wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "input[name='nomeSeach']")))
+            except Exception as e:
+                logger.info(f"❌ Não foi possível chegar na tela de busca: {e}")
+                return False
+
+        res_busca = self.buscar_funcionario_por_codigo(cod_func)
+        if not res_busca.success:
+            logger.info(f"❌ Falha ao rebuscar funcionário {cod_func}: {res_busca.message}")
+            return False
+
+        try:
+            self.wait.until(EC.presence_of_element_located((By.ID, "tabelaFichas")))
+            return True
+        except Exception as e:
+            logger.info(f"❌ tabelaFichas não apareceu após rebusca: {e}")
+            return False
+
     def _voltar_ao_frame(self):
-        """Helper para garantir que o Selenium está sempre no socframe."""
+        """Helper para garantir que o Selenium está sempre no novosocFrame."""
         self.driver.switch_to.default_content()
-        self.wait.until(EC.frame_to_be_available_and_switch_to_it((By.ID, "socframe")))
+        self.wait.until(EC.frame_to_be_available_and_switch_to_it((By.ID, "novosocFrame")))
 
     def fechar(self):
         """Fecha o navegador"""
@@ -668,88 +702,240 @@ class SOCService:
         self.fechar()
 
 
-    # def configurar_periodo(self, data_inicio=None, data_fim=None) -> OperationResult:
-    #     """
-    #     Configura o período de datas no relatório e retorna OperationResult.
-    #     """
-    #     try:
-    #         if not data_inicio or not data_fim:
-    #             hoje = datetime.now()
-    #             dia_da_semana = hoje.weekday()
-
-    #             if dia_da_semana == 0:  
-    #                 inicio_dt = hoje - timedelta(days=3)
-    #                 fim_dt = hoje - timedelta(days=1)
-    #             else:
-    #                 inicio_dt = hoje - timedelta(days=1)
-    #                 fim_dt = hoje - timedelta(days=1)
-
-    #             data_inicio = inicio_dt.strftime("%d/%m/%Y")
-    #             data_fim = fim_dt.strftime("%d/%m/%Y")
-
-    #         logger.info(f"📅 Configurando período: {data_inicio} até {data_fim}")
-
-    #         data_inicial = self.wait.until(EC.presence_of_element_located((By.ID, "dataInicioPeriodo")))
-    #         data_final = self.wait.until(EC.presence_of_element_located((By.ID, "dataFimPeriodo")))
-
-    #         self.driver.execute_script("arguments[0].value = arguments[1];", data_inicial, data_inicio)
-    #         self.driver.execute_script("arguments[0].value = arguments[1];", data_final, data_fim)
-            
-    #         self.driver.execute_script("arguments[0].dispatchEvent(new Event('change'));", data_inicial)
-    #         self.driver.execute_script("arguments[0].dispatchEvent(new Event('change'));", data_final)
-
-    #         return OperationResult.ok(f"Período configurado: {data_inicio} - {data_fim}", data={"inicio": data_inicio, "fim": data_fim})
-
-    #     except Exception as e:
-    #         logger.info(f"❌ Erro ao configurar datas: {e}")
-    #         return ErrorTranslator.traduzir(e)
-
-
-def configurar_periodo(self, data_inicio=None, data_fim=None) -> OperationResult:
-    """Configura o período de datas lidando com componentes Datepicker."""
-    try:
-        if not data_inicio or not data_fim:
-            hoje = datetime.now()
-            if hoje.weekday() == 0:  
-                inicio_dt = hoje - timedelta(days=3)
-                fim_dt = hoje - timedelta(days=1)
-            else:
-                inicio_dt = hoje - timedelta(days=1)
-                fim_dt = hoje - timedelta(days=1)
-            data_inicio = inicio_dt.strftime("%d/%m/%Y")
-            data_fim = fim_dt.strftime("%d/%m/%Y")
-
-        logger.info(f"📅 Configurando período: {data_inicio} até {data_fim}")
-
-        data_inicial = self.wait.until(EC.visibility_of_element_located((By.ID, "dataInicioPeriodo")))
-        data_final = self.wait.until(EC.visibility_of_element_located((By.ID, "dataFimPeriodo")))
-
-        script_set_date = """
-            arguments[0].removeAttribute('readonly');
-            arguments[0].value = '';
-            arguments[0].value = arguments[1];
-            arguments[0].dispatchEvent(new Event('focus'));
-            arguments[0].dispatchEvent(new Event('input'));
-            arguments[0].dispatchEvent(new Event('change'));
-            arguments[0].dispatchEvent(new Event('blur'));
+    def descompactar_para_relatorio_geral(self, diretorio, data_inicio, data_fim) -> OperationResult:
         """
-        
-        self.driver.execute_script(script_set_date, data_inicial, data_inicio)
-        self.driver.execute_script(script_set_date, data_final, data_fim)
+        Igual a descompactar_e_renomear_relatorio, mas salva na pasta 'relatorios'
+        com o nome relatorio_geral_<data_inicio>_<data_fim>.xlsx.
+        Não altera o método original.
+        """
+        import shutil
+        tentativas = 45
+
+        while tentativas > 0:
+            arquivos = [f for f in os.listdir(diretorio) if f.endswith('.zip') and not f.endswith('.crdownload')]
+
+            if arquivos:
+                caminho_zip = os.path.join(diretorio, arquivos[0])
+                time.sleep(1)
+                try:
+                    with zipfile.ZipFile(caminho_zip, 'r') as zip_ref:
+                        nomes_arquivos = zip_ref.namelist()
+                        zip_ref.extractall(diretorio)
+
+                    arquivo_extraido = next((f for f in nomes_arquivos if f.endswith('.xls')), None)
+                    if not arquivo_extraido:
+                        return OperationResult.fail("❌ O ZIP do SOC não continha um arquivo .xls")
+
+                    caminho_antigo = os.path.join(diretorio, arquivo_extraido)
+
+                    pasta_destino = os.path.join(diretorio, "relatorios")
+                    if not os.path.exists(pasta_destino):
+                        os.makedirs(pasta_destino)
+                        logger.info(f"📁 Pasta criada: {pasta_destino}")
+
+                    ini_fmt = data_inicio.replace('/', '-')
+                    fim_fmt = data_fim.replace('/', '-')
+                    novo_nome = f"relatorio_geral_{ini_fmt}_{fim_fmt}.xls"
+                    caminho_novo = os.path.join(pasta_destino, novo_nome)
+
+                    if os.path.exists(caminho_novo):
+                        try:
+                            os.remove(caminho_novo)
+                        except PermissionError:
+                            return OperationResult.fail(f"❌ O arquivo '{novo_nome}' está aberto. Feche o Excel e tente novamente.")
+
+                    shutil.move(caminho_antigo, caminho_novo)
+
+                    if os.path.exists(caminho_zip):
+                        try:
+                            os.remove(caminho_zip)
+                        except:
+                            pass
+
+                    logger.info(f"📦 Arquivo salvo: {caminho_novo}")
+                    return OperationResult.ok(f"✅ Relatório salvo: {novo_nome}", data=caminho_novo)
+
+                except zipfile.BadZipFile:
+                    return OperationResult.fail("❌ O arquivo baixado do SOC está corrompido (ZIP inválido).")
+                except Exception as e:
+                    return ErrorTranslator.traduzir(e)
+
+            time.sleep(1)
+            tentativas -= 1
+
+        return OperationResult.fail("⏳ Tempo esgotado: O download do SOC não foi detectado na pasta.")
+
+    def processar_relatorio_sem_anexos(self, caminho_excel, output_dir, data_inicio, data_fim) -> OperationResult:
+        """
+        Lê o relatório do SOC (cabeçalho na linha 6, skiprows=5), preenche
+        Médico assistente, CRM e CID de cada ficha — sem baixar anexos.
+
+        Melhorias:
+        - Coluna 'status_processamento': 'pendente' | 'ok' | 'erro' | 'nao_encontrado'
+        - Salva o arquivo a cada ficha concluída (retomada após parada)
+        - Pula fichas já marcadas como 'ok'
+        - Código do funcionário tratado como inteiro para evitar zeros extras
+        - Recovery de frame após erro de Selenium
+        """
+        import shutil
+
+        pasta_destino = os.path.join(output_dir, "relatorios")
+        if not os.path.exists(pasta_destino):
+            os.makedirs(pasta_destino)
+
+        ini_fmt = data_inicio.replace('/', '-')
+        fim_fmt = data_fim.replace('/', '-')
+        caminho_final = os.path.join(pasta_destino, f"relatorio_geral_{ini_fmt}_{fim_fmt}.xlsx")
 
         try:
-            self.driver.find_element(By.TAG_NAME, "body").click()
-        except:
-            pass
+            if os.path.exists(caminho_final):
+                logger.info(f"🔄 Retomando processamento a partir de: {caminho_final}")
+                df = pd.read_excel(caminho_final)
+            else:
+                df = pd.read_excel(caminho_excel, skiprows=4)
+                df.columns = df.columns.str.strip()
 
-        return OperationResult.ok(
-            f"Período configurado: {data_inicio} - {data_fim}", 
-            data={"inicio": data_inicio, "fim": data_fim}
-        )
+            for col in ['Médico assistente', 'CRM Médico assistente', 'CID', 'status_processamento']:
+                if col not in df.columns:
+                    df[col] = ""
 
-    except Exception as e:
-        logger.error(f"❌ Erro ao configurar datas: {e}")
-        return ErrorTranslator.traduzir(e)
+            df['Código Funcionário'] = (
+                df['Código Funcionário']
+                .astype(str)
+                .str.replace(r'\.0$', '', regex=True)
+                .str.strip()
+                .apply(lambda x: str(int(x)) if x.isdigit() else x)
+            )
+
+            df.loc[
+                ~df['status_processamento'].isin(['ok', 'nao_encontrado']),
+                'status_processamento'
+            ] = 'pendente'
+
+            if not os.path.exists(caminho_final):
+                df.to_excel(caminho_final, index=False)
+
+            lista_funcionarios = [
+                c for c in df['Código Funcionário'].unique()
+                if str(c).lower() not in ['nan', 'nat', '']
+            ]
+            total_func = len(lista_funcionarios)
+
+            for i, cod_func in enumerate(lista_funcionarios):
+                fichas_do_func = df[df['Código Funcionário'] == cod_func]
+
+                pendentes = fichas_do_func[~fichas_do_func['status_processamento'].isin(['ok', 'nao_encontrado'])]
+                if pendentes.empty:
+                    logger.info(f"⏭️ [{i+1}/{total_func}] Funcionário {cod_func} já processado. Pulando.")
+                    continue
+
+                logger.info(f"\n👥 [{i+1}/{total_func}] Processando funcionário: {cod_func}")
+
+                for index_excel, row in pendentes.iterrows():
+                    try:
+                        def formatar_data(v):
+                            if pd.isna(v) or str(v).strip().lower() in ['nan', 'nat', '']: return ""
+                            try: return pd.to_datetime(v, dayfirst=True).strftime('%d/%m/%Y')
+                            except: return str(v).strip()
+
+                        data_f = formatar_data(row['Data Ficha Clínica'])
+                        data_i = formatar_data(row['Data de Afastamento (de)'])
+                        data_a = formatar_data(row['Data de Afastamento (até)'])
+
+                        logger.info(f"🔎 Buscando ficha {data_f} | Início {data_i}")
+
+                        self.navegar_para_tela('1084')
+                        res_busca_ficha = self.buscar_funcionario_por_codigo(cod_func)
+                        if not res_busca_ficha.success:
+                            logger.info(f"⚠️ Falha ao buscar funcionário: {res_busca_ficha.message}")
+                            df.at[index_excel, 'status_processamento'] = 'erro'
+                            df.to_excel(caminho_final, index=False)
+                            continue
+
+                        self.wait.until(EC.presence_of_element_located((By.ID, "tabelaFichas")))
+                        linhas_web = self.driver.find_elements(By.XPATH, "//table[@id='tabelaFichas']//tr[td]")
+
+                        linha_alvo_index = -1
+                        for idx, tr in enumerate(linhas_web):
+                            texto_linha = tr.text.replace('\n', ' ').strip()
+                            if (data_f in texto_linha and data_i in texto_linha
+                                    and 'Atestado' in texto_linha
+                                    and ((data_a in texto_linha) if data_a else True)):
+                                linha_alvo_index = idx
+                                break
+
+                        if linha_alvo_index != -1:
+                            logger.info(f"🎯 Correspondência encontrada na linha web {linha_alvo_index}")
+                            link = linhas_web[linha_alvo_index].find_element(By.XPATH, ".//a[contains(@class, 'llinha2')]")
+                            self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", link)
+                            self.driver.execute_script("arguments[0].click();", link)
+
+                            self.wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "span[data-alterado-grava-tela='inputMedico_nomeSolicitante']")))
+
+                            dados_medico = self.obter_medico_assistente()
+                            cid_v = self.obter_cid_principal()
+
+                            df.at[index_excel, 'Médico assistente'] = dados_medico.get('nome', '')
+                            df.at[index_excel, 'CRM Médico assistente'] = dados_medico.get('crm', '')
+                            df.at[index_excel, 'CID'] = cid_v
+                            df.at[index_excel, 'status_processamento'] = 'ok'
+
+                            logger.info(f"✅ CID: {cid_v} | Médico: {dados_medico.get('nome', '')}")
+                            df.to_excel(caminho_final, index=False)
+
+                        else:
+                            logger.info(f"❌ Ficha não encontrada na tabela web.")
+                            df.at[index_excel, 'status_processamento'] = 'nao_encontrado'
+                            df.to_excel(caminho_final, index=False)
+
+                    except Exception as e:
+                        logger.info(f"⚠️ Erro na ficha {index_excel}: {e}")
+                        df.at[index_excel, 'status_processamento'] = 'erro'
+                        df.to_excel(caminho_final, index=False)
+
+            logger.info(f"✅ Arquivo salvo: {caminho_final}")
+            return OperationResult.ok("Processamento concluído!", data=caminho_final)
+
+        except Exception as e:
+            return ErrorTranslator.traduzir(e)
+
+
+    def configurar_periodo(self, data_inicio, data_fim) -> OperationResult:
+        """
+        Configura o período de datas no relatório e retorna OperationResult.
+        """
+        try:
+            if not data_inicio or not data_fim:
+                hoje = datetime.now()
+                dia_da_semana = hoje.weekday()
+
+                if dia_da_semana == 0:  
+                    inicio_dt = hoje - timedelta(days=3)
+                    fim_dt = hoje - timedelta(days=1)
+                else:
+                    inicio_dt = hoje - timedelta(days=1)
+                    fim_dt = hoje - timedelta(days=1)
+
+                data_inicio = inicio_dt.strftime("%d/%m/%Y")
+                data_fim = fim_dt.strftime("%d/%m/%Y")
+
+            logger.info(f"📅 Configurando período: {data_inicio} até {data_fim}")
+
+            data_inicial = self.wait.until(EC.presence_of_element_located((By.ID, "dataInicioPeriodo")))
+            data_final = self.wait.until(EC.presence_of_element_located((By.ID, "dataFimPeriodo")))
+
+            self.driver.execute_script("arguments[0].value = arguments[1];", data_inicial, data_inicio)
+            self.driver.execute_script("arguments[0].value = arguments[1];", data_final, data_fim)
+            
+            self.driver.execute_script("arguments[0].dispatchEvent(new Event('change'));", data_inicial)
+            self.driver.execute_script("arguments[0].dispatchEvent(new Event('change'));", data_final)
+
+            return OperationResult.ok(f"Período configurado: {data_inicio} - {data_fim}", data={"inicio": data_inicio, "fim": data_fim})
+
+        except Exception as e:
+            logger.info(f"❌ Erro ao configurar datas: {e}")
+            return ErrorTranslator.traduzir(e)
+
 
 def gerar_relatorio_licensas_medicas(
     url_soc, usuario, senha_texto, senha_virtual_clicks, 
@@ -768,9 +954,10 @@ def gerar_relatorio_licensas_medicas(
             
             res_login = soc.login(usuario, senha_texto, senha_virtual_clicks)
             if not res_login.success: return res_login
-            time.sleep(5)
+            time.sleep(1)
             soc.navegar_para_tela('237')
             soc.configurar_periodo(data_inicio, data_fim)
+            # soc.configurar_periodo("13/03/2026", "13/03/2026")
             soc.selecionar_tipo_relatorio()
             soc.selecionar_checkboxes()
             soc.gerar_relatorio_excel()
@@ -812,7 +999,7 @@ def gerar_relatorio_licensas_medicas(
         logger.info(f" Erro ao contar")
         return ErrorTranslator.traduzir(e)
 
-def executar_fluxo_soc(perfil_selecionado="admin", data_ini=None, data_fim=None) -> OperationResult:
+def executar_fluxo_soc(data_ini, data_fim, perfil_selecionado="admin") -> OperationResult:
     """
     Orquestra o download do SOC e a exportação para o Google Sheets.
     """
@@ -837,8 +1024,12 @@ def executar_fluxo_soc(perfil_selecionado="admin", data_ini=None, data_fim=None)
             processar_detalhes=True
         )
 
-        if not resultado_op or not hasattr(resultado_op, 'success') or not resultado_op.success:
-            return OperationResult.fail(f"❌ O processo do SOC falhou: {resultado_op.message if hasattr(resultado_op, 'message') else 'Erro desconhecido'}")
+        if isinstance(resultado_op, str):
+            return OperationResult.fail(f"❌ Erro inesperado (retorno string): {resultado_op}")
+
+        if not resultado_op or not resultado_op.success:
+            msg = resultado_op.message if hasattr(resultado_op, 'message') else "Erro desconhecido"
+            return OperationResult.fail(f"❌ O processo do SOC falhou: {msg}")
 
         resultado_caminho = resultado_op.data 
 
@@ -849,4 +1040,176 @@ def executar_fluxo_soc(perfil_selecionado="admin", data_ini=None, data_fim=None)
 
     except Exception as e:
         logger.info(f"❌ Erro crítico no fluxo: {e}")
+        return OperationResult.fail(f"Erro inesperado: {str(e)}")
+
+
+def listar_relatorios_pendentes() -> list:
+    """
+    Retorna lista de dicts com relatórios que ainda têm fichas por processar.
+    Cada dict: { 'caminho': str, 'nome': str, 'pendentes': int, 'total': int }
+    """
+    output_dir = get_config('paths', 'downloads')
+    pasta_relatorios = os.path.join(output_dir, "relatorios")
+
+    if not os.path.exists(pasta_relatorios):
+        return []
+
+    resultado = []
+    for arquivo in os.listdir(pasta_relatorios):
+        if not arquivo.endswith('.xlsx') or not arquivo.startswith('relatorio_geral_'):
+            continue
+        caminho = os.path.join(pasta_relatorios, arquivo)
+        try:
+            df = pd.read_excel(caminho)
+            if 'status_processamento' not in df.columns:
+                continue
+            total = len(df)
+            pendentes = len(df[~df['status_processamento'].isin(['ok', 'nao_encontrado'])])
+            if pendentes > 0:
+                resultado.append({
+                    'caminho': caminho,
+                    'nome': arquivo,
+                    'pendentes': pendentes,
+                    'total': total
+                })
+        except Exception:
+            continue
+
+    return resultado
+
+
+def retomar_relatorio_por_periodo(caminho_excel: str, perfil_selecionado: str = "admin") -> OperationResult:
+    """
+    Retoma o processamento de um relatório anterior que foi interrompido,
+    continuando a partir das fichas ainda com status 'pendente' ou 'erro'.
+    Não baixa novo relatório do SOC.
+    """
+    logger.info(f"\n🔄 Retomando relatório: {os.path.basename(caminho_excel)}")
+
+    try:
+        if not os.path.exists(caminho_excel):
+            return OperationResult.fail(f"❌ Arquivo não encontrado: {caminho_excel}")
+
+        nome = os.path.basename(caminho_excel).replace('.xlsx', '')
+        partes = nome.split('_')
+        try:
+            data_ini = partes[2].replace('-', '/')
+            data_fim = partes[3].replace('-', '/')
+        except IndexError:
+            return OperationResult.fail("❌ Não foi possível extrair as datas do nome do arquivo.")
+
+        if perfil_selecionado not in get_config('soc', 'user'):
+            return OperationResult.fail(f"❌ Perfil '{perfil_selecionado}' não encontrado no config.")
+
+        clicks_raw = descriptografar(get_config('soc', 'user', perfil_selecionado, 'SENHA_VIRTUAL'))
+        senha_virtual = [c.strip() for c in clicks_raw.split(',')] if clicks_raw else []
+        output_dir = get_config('paths', 'downloads')
+
+        with SOCService(get_config('soc', 'URL_SOC')) as soc:
+            res_driver = soc._inicializar_driver(output_dir)
+            if not res_driver.success:
+                return res_driver
+
+            res_login = soc.login(
+                usuario=descriptografar(get_config('soc', 'user', perfil_selecionado, 'LOGIN')),
+                senha_texto=descriptografar(get_config('soc', 'user', perfil_selecionado, 'PASSWORD')),
+                senha_virtual_clicks=senha_virtual
+            )
+            if not res_login.success:
+                return res_login
+
+            time.sleep(1)
+            soc.navegar_para_tela('1084')
+
+            res_final = soc.processar_relatorio_sem_anexos(caminho_excel, output_dir, data_ini, data_fim)
+
+            if not res_final.success:
+                return res_final
+
+            logger.info(f"🎉 Retomada concluída: {res_final.data}")
+            return OperationResult.ok("Retomada concluída com sucesso!", data=res_final.data)
+
+    except Exception as e:
+        logger.info(f"❌ Erro crítico em retomar_relatorio_por_periodo: {e}")
+        return OperationResult.fail(f"Erro inesperado: {str(e)}")
+
+
+def exportar_relatorio_por_periodo(data_ini: str, data_fim: str, perfil_selecionado: str = "admin") -> OperationResult:
+    """
+    Acessa o SOC, gera o relatório no intervalo informado, lê os dados de cada
+    ficha clínica (CID, CRM, médico) e salva o Excel na pasta 'relatorios' com
+    o nome relatorio_geral_<data_ini>_<data_fim>.xlsx.
+    Não baixa anexos e não importa para o Google Sheets.
+    """
+    logger.info(f"\n🚀 Exportando relatório SOC por período: {data_ini} → {data_fim}")
+
+    try:
+        for label, valor in [("Data Inicial", data_ini), ("Data Final", data_fim)]:
+            try:
+                datetime.strptime(valor, "%d/%m/%Y")
+            except ValueError:
+                return OperationResult.fail(f"❌ {label} inválida: '{valor}'. Use o formato dd/mm/aaaa.")
+
+        if perfil_selecionado not in get_config('soc', 'user'):
+            return OperationResult.fail(f"❌ Perfil '{perfil_selecionado}' não encontrado no config.")
+
+        clicks_raw = descriptografar(get_config('soc', 'user', perfil_selecionado, 'SENHA_VIRTUAL'))
+        senha_virtual = [c.strip() for c in clicks_raw.split(',')] if clicks_raw else []
+        output_dir = get_config('paths', 'downloads')
+
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+
+        with SOCService(get_config('soc', 'URL_SOC')) as soc:
+            res_driver = soc._inicializar_driver(output_dir)
+            if not res_driver.success:
+                return res_driver
+
+            res_login = soc.login(
+                usuario=descriptografar(get_config('soc', 'user', perfil_selecionado, 'LOGIN')),
+                senha_texto=descriptografar(get_config('soc', 'user', perfil_selecionado, 'PASSWORD')),
+                senha_virtual_clicks=senha_virtual
+            )
+            if not res_login.success:
+                return res_login
+
+            time.sleep(1)
+            soc.navegar_para_tela('237')
+            soc.configurar_periodo(data_ini, data_fim)
+            soc.selecionar_tipo_relatorio()
+            soc.selecionar_checkboxes()
+            soc.gerar_relatorio_excel()
+
+            tempo_total = 45
+            for i in range(tempo_total):
+                segundos = i + 1
+                if segundos % 10 == 0 or segundos == 1:
+                    logger.info(f"⏳ Aguardando download... ({segundos}s passados)")
+                time.sleep(1)
+            logger.info("✅ Tempo de espera finalizado!")
+
+            soc.navegar_para_tela('271')
+            res_download = soc.baixar_ultimo_relatorio()
+            if not res_download.success:
+                return OperationResult.fail("❌ O relatório não apareceu na lista de downloads.")
+
+            res_xls = soc.descompactar_para_relatorio_geral(output_dir, data_ini, data_fim)
+            if not res_xls.success:
+                return res_xls
+            caminho_xls = res_xls.data
+
+            soc.navegar_para_tela('1084')
+            res_final = soc.processar_relatorio_sem_anexos(caminho_xls, output_dir, data_ini, data_fim)
+
+            if os.path.exists(caminho_xls):
+                os.remove(caminho_xls)
+
+            if not res_final.success:
+                return res_final
+
+            logger.info(f"🎉 Relatório gerado: {res_final.data}")
+            return OperationResult.ok("Relatório exportado com sucesso!", data=res_final.data)
+
+    except Exception as e:
+        logger.info(f"❌ Erro crítico em exportar_relatorio_por_periodo: {e}")
         return OperationResult.fail(f"Erro inesperado: {str(e)}")
