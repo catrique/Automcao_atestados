@@ -133,6 +133,15 @@ class SheetsService:
             df_novo = pd.read_excel(caminho_excel, skiprows=pular)
             df_novo = df_novo.loc[:, ~df_novo.columns.astype(str).str.contains('^Unnamed')].dropna(axis=1, how='all').fillna('')
 
+            df_novo.columns = df_novo.columns.str.strip()
+
+            if "Nome Funcionário" in df_novo.columns:
+                df_novo["Nome Funcionário"] = df_novo["Nome Funcionário"].astype(str).str.upper()
+                df_novo = df_novo.sort_values(
+                    by="Nome Funcionário",
+                    key=lambda col: col.astype(str).str.upper()
+                )
+
             for col in df_novo.select_dtypes(include=['datetime']).columns:
                 df_novo[col] = df_novo[col].dt.strftime('%d/%m/%Y')
 
@@ -141,7 +150,13 @@ class SheetsService:
                 return OperationResult.fail(f"❌ Aba '{NOME_ABA}' não existe.")
 
             dados_sheets = aba.get_all_values()
-            
+            if dados_sheets:
+                header_sheets = [h.strip() for h in dados_sheets[0]]
+
+                df_novo.columns = df_novo.columns.str.strip()
+                colunas_ordenadas = [col for col in header_sheets if col in df_novo.columns]
+                df_novo = df_novo[colunas_ordenadas]
+
             if not dados_sheets:
                 proxima_linha = 1
                 corpo_dados = [df_novo.columns.values.tolist()] + df_novo.values.tolist()

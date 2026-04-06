@@ -94,10 +94,26 @@ class BethaService:
                     f"🔍 Matrícula/Funcionário '{termo}' não localizado na Betha."
                 )
 
-            id_matricula = content[0].get("id")
+            matricula_encontrada = None
+
+            for item in content:
+                numero_cartao = str(item.get("numeroCartaoPonto", "descricao", " ")).strip()
+
+                if numero_cartao == str(termo).strip():
+                    matricula_encontrada = item
+                    break
+
+            if not matricula_encontrada:
+                return OperationResult.fail(
+                    f"⚠️ Nenhuma matrícula com númeroCartaoPonto igual a '{termo}' foi encontrada."
+                )
+
+            id_matricula = matricula_encontrada.get("id")
+
             return OperationResult.ok(
-                f"✅ Matrícula {termo} encontrada.", data=id_matricula
-            )
+                f"✅ Matrícula {termo} encontrada com correspondência exata.",
+                data=id_matricula
+        )
 
         except requests.exceptions.HTTPError as e:
             if e.response.status_code in [401, 403]:
@@ -121,7 +137,7 @@ class BethaService:
         linhas_filtradas = [
             linha
             for linha in dados_planilha
-            if str(linha.get("Pronto para importação", "")).strip().lower() == "sim"
+            if str(linha.get("Pronto para importação", "")).strip().lower() == "sim" and str(linha.get("Status", "")).strip().lower() != "enviado"
         ]
 
         if not linhas_filtradas:
@@ -179,7 +195,7 @@ class BethaService:
                     continue
 
                 id_betha = res_matricula.data
-                logger.info(f"✅ Matrícula encontrada para: {matricula_input}!")
+                logger.info(f"✅ Matrícula encontrada para: {matricula_input} (ID: {id_betha})")
 
                 def buscar_id_seguro(aba, codigo, col, nome=None, col_n=None):
                     resultado = sheets.buscar_id(
@@ -222,6 +238,7 @@ class BethaService:
                     continue
 
                 data_ini = self.formatar_data(linha.get("Data de Afastamento (de)"))
+                data_ficha_clinica = self.formatar_data(linha.get("Data Ficha Clínica"))
                 data_fim = self.formatar_data(
                     linha.get("Nova data final do afastamento")
                 )
@@ -247,13 +264,12 @@ class BethaService:
                     ),
                     "cidPrincipal": {"id": id_cid} if id_cid else None,
                     "cids": [{"id": id_cid}] if id_cid else [],
-                    "inseridoPeloRh": True,
                     "localAtendimento": "OUTRO",
-                    "geradoApartirDeAfastamento": bool(id_tipo_afastamento),
+                    "gerarAfastamento ": True,
+                    "dataPericia": data_ficha_clinica,
                     "dataEntrega": f"{data_ini} 08:00:00" if data_ini else None,
                     "anexos": lista_anexos,
                     "ausencia": {
-                        "matricula": {"id": id_betha},
                         "tipo": {
                             "id": 8541,
                             "descricao": "Licença Médica",
@@ -262,7 +278,6 @@ class BethaService:
                         "dataInicial": data_ini,
                         "dataFinal": data_fim,
                         "abonar": True,
-                        "inseridoPeloRh": True,
                         "observacao": "Ausência gerada por atestado",
                     },
                 }

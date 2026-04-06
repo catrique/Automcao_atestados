@@ -369,9 +369,8 @@ class App(ctk.CTk):
 
 
     def _construir_painel_datas_soc(self):
-        """Monta o painel de datas que aparece ao clicar no botão 2 (SOC)."""
+        """Monta o painel de datas + console que aparece ao clicar no botão 2 (SOC)."""
         self.main_container = ctk.CTkFrame(self, fg_color="transparent")
-        self.main_container.grid(row=0, column=1, sticky="nsew", padx=20, pady=20)
         self.main_container.grid_columnconfigure(0, weight=1)
         self.main_container.grid_rowconfigure(1, weight=1)
 
@@ -400,24 +399,55 @@ class App(ctk.CTk):
             command=self.ao_confirmar_baixar_soc,
         ).grid(row=0, column=4, padx=15, pady=10)
 
+        self.soc_console_frame = ctk.CTkFrame(self.main_container, fg_color="transparent")
+        self.soc_console_frame.grid_columnconfigure(0, weight=1)
+        self.soc_console_frame.grid_rowconfigure(1, weight=1)
+
+        ctk.CTkLabel(
+            self.soc_console_frame,
+            text="Console de Execução",
+            font=ctk.CTkFont(weight="bold"),
+        ).grid(row=0, column=0, sticky="w", pady=(0, 5))
+
+        self.soc_log_text = ctk.CTkTextbox(
+            self.soc_console_frame,
+            font=ctk.CTkFont(family="Consolas", size=12),
+            wrap="word",
+        )
+        self.soc_log_text.grid(row=1, column=0, sticky="nsew")
+
 
     def _exibir_console(self):
         """Exibe o console e oculta os outros painéis."""
         self.scroll_frame.grid_forget()
         self.exportar_frame.grid_forget()
+        self.main_container.grid_forget()
         self.console_frame.grid(row=0, column=1, padx=20, pady=20, sticky="nsew")
 
     def _exibir_painel_configuracoes(self):
         """Exibe o painel de credenciais e oculta os outros."""
         self.console_frame.grid_forget()
         self.exportar_frame.grid_forget()
+        self.main_container.grid_forget()
         self.scroll_frame.grid(row=0, column=1, padx=20, pady=20, sticky="nsew")
 
     def _exibir_painel_exportar_periodo(self):
         """Exibe o painel de exportação por período e oculta os outros."""
         self.console_frame.grid_forget()
         self.scroll_frame.grid_forget()
+        self.main_container.grid_forget()
         self.exportar_frame.grid(row=0, column=1, padx=20, pady=20, sticky="nsew")
+
+    def _exibir_painel_soc(self):
+        """Exibe o painel SOC (datas + console) e oculta os outros."""
+        self.console_frame.grid_forget()
+        self.scroll_frame.grid_forget()
+        self.exportar_frame.grid_forget()
+        self.main_container.grid(row=0, column=1, sticky="nsew", padx=20, pady=20)
+        self.main_container.grid_columnconfigure(0, weight=1)
+        self.main_container.grid_rowconfigure(1, weight=1)
+        self.header_frame_soc.grid(row=0, column=0, sticky="ew", pady=(0, 10))
+        self.soc_console_frame.grid(row=1, column=0, sticky="nsew")
 
     def _alternar_subpainel_exportacao(self):
         """Alterna entre sub-painel 'novo' e 'retomar' conforme o radio button selecionado."""
@@ -448,8 +478,8 @@ class App(ctk.CTk):
 
 
     def ao_clicar_baixar_soc(self):
-        """Botão 2 → Exibe o painel de seleção de período para baixar o relatório SOC."""
-        self.header_frame_soc.grid(row=0, column=0, sticky="ew", pady=(0, 10))
+        """Botão 2 → Exibe o painel de seleção de período + console para baixar o relatório SOC."""
+        self._exibir_painel_soc()
         self.entry_soc_data_ini.delete(0, "end")
         self.entry_soc_data_fim.delete(0, "end")
 
@@ -462,6 +492,7 @@ class App(ctk.CTk):
             messagebox.showwarning("Atenção", "Preencha o período antes de baixar.")
             return
 
+        self.soc_log_text.delete("1.0", "end")
         threading.Thread(
             target=self._executar_baixar_soc,
             args=(data_ini, data_fim),
@@ -576,28 +607,44 @@ class App(ctk.CTk):
 
     def _executar_baixar_soc(self, data_ini, data_fim):
         """Worker: baixa relatório SOC, valida o Excel e importa para o Sheets."""
-        self.log(f"🚀 Iniciando busca SOC: {data_ini} até {data_fim}...")
+        self.log_soc(f"🚀 Iniciando busca SOC: {data_ini} até {data_fim}...")
         try:
             res_soc = executar_fluxo_soc(data_ini, data_fim)
             if not (res_soc and res_soc.success):
-                self.log(f"❌ Erro no SOC: {res_soc.message if res_soc else 'Falha na extração'}")
+                self.log_soc(f"❌ Erro no SOC: {res_soc.message if res_soc else 'Falha na extração'}")
                 return
 
             excel = res_soc.data
-            self.log(f"🔍 Validando arquivo: {os.path.basename(excel)}")
+            self.log_soc(f"🔍 Validando arquivo: {os.path.basename(excel)}")
             output_op = processar_validacoes_excel(excel)
 
             if output_op.success:
                 caminho_validado = output_op.data
-                self.log("📤 Importando para Google Sheets...")
+                self.log_soc("📤 Importando para Google Sheets...")
                 pasta = os.path.dirname(caminho_validado)
                 sheets.importar_excel_para_aba(pasta)
-                self.log("✅ Processo SOC → Sheets concluído!")
+                self.log_soc("✅ Processo SOC → Sheets concluído!")
             else:
-                self.log(f"❌ Erro na validação: {output_op.message}")
+                self.log_soc(f"❌ Erro na validação: {output_op.message}")
+
+
+        # try:
+
+        #     excel = r"\\10.1.1.50\ADM_Cresst\Atestados_Laudar\30-03-2026\Relatorio_licensas_medicas_30-03-2026.xlsx"
+        #     self.log_soc(f"🔍 Validando arquivo: {os.path.basename(excel)}")
+        #     output_op = processar_validacoes_excel(excel)
+
+        #     if output_op.success:
+        #         caminho_validado = output_op.data
+        #         self.log_soc("📤 Importando para Google Sheets...")
+        #         pasta = os.path.dirname(caminho_validado)
+        #         sheets.importar_excel_para_aba(pasta)
+        #         self.log_soc("✅ Processo SOC → Sheets concluído!")
+        #     else:
+        #         self.log_soc(f"❌ Erro na validação: {output_op.message}")
 
         except Exception as e:
-            self.log(f"💥 Erro no SOC: {e}")
+            self.log_soc(f"💥 Erro no SOC: {e}")
 
     def _executar_exportar_periodo(self, data_ini, data_fim):
         """Worker: gera e salva relatório SOC para o período informado."""
@@ -696,9 +743,9 @@ class App(ctk.CTk):
                         sucessos += 1
                     else:
                         sheets.marcar_status_na_planilha(
-                            cod_ficha, mensagem_status=f"ERRO | {result.message}"
+                            cod_ficha, mensagem_status=f"ERRO | {result.message or result}"
                         )
-                        self.log(f"❌ Ficha {cod_ficha}: Falhou ({result.message})")
+                        self.log(f"❌ Ficha {cod_ficha}: Falhou ({result.message or result})")
                         falhas += 1
 
                 except Exception as e_loop:
@@ -712,9 +759,14 @@ class App(ctk.CTk):
 
 
     def log(self, msg):
-        """Insere uma mensagem no console com timestamp."""
+        """Insere uma mensagem no console principal com timestamp."""
         self.log_text.insert("end", f"[{time.strftime('%H:%M:%S')}] {msg}\n")
         self.log_text.see("end")
+
+    def log_soc(self, msg):
+        """Insere uma mensagem no console do painel SOC com timestamp."""
+        self.soc_log_text.insert("end", f"[{time.strftime('%H:%M:%S')}] {msg}\n")
+        self.soc_log_text.see("end")
 
     def _limpar_campos_credenciais(self):
         """Apaga o conteúdo de todos os campos de credenciais após salvar."""

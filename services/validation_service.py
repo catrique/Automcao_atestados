@@ -136,6 +136,25 @@ def validar_vinculo_matricula(df_excel, df_servidores):
             
     return vinculos_resultado
 
+def validar_situacao_matricula(df_excel, df_servidores):
+    mapa_situacoes = {
+        str(row['Matricula']).strip().lstrip('0'): str(row['Situação']).strip()
+        for _, row in df_servidores.iterrows()
+        if 'Matricula' in row and 'Situação' in row
+    }
+
+    situacoes_resultado = []
+
+    for _, row in df_excel.iterrows():
+        matricula_excel = str(row.get("Matrícula Funcionário") or "").strip().lstrip('0')
+        situacao_encontrada = mapa_situacoes.get(matricula_excel)
+        
+        if situacao_encontrada:
+            situacoes_resultado.append(situacao_encontrada)
+        else:
+            situacoes_resultado.append(row.get("Situação BETHA") or "")  
+            
+    return situacoes_resultado
 def processar_validacoes_excel(caminho_excel) -> OperationResult:
     """
     Orquestra as validações (Médico, CID e Múltiplos Vínculos) e salva no Excel.
@@ -175,6 +194,7 @@ def processar_validacoes_excel(caminho_excel) -> OperationResult:
 
         df.columns = df.columns.str.strip()
         df["Vínculo"] = validar_vinculo_matricula(df, df_servidores_ref)
+        df["Situação BETHA"] = validar_situacao_matricula(df, df_servidores_ref)
         lista_erros_medico, count_m = validar_medico_crm(df, mapa_medicos_ref)
         lista_erros_cid, count_c = validar_cid(df, set_cids_ref)
         lista_erros_matricula, count_mat = validar_duplicidade_matricula(df, df_servidores_ref)
@@ -184,7 +204,7 @@ def processar_validacoes_excel(caminho_excel) -> OperationResult:
             erros_da_linha = [e for e in [e_med, e_cid, e_mat] if e] 
             erros_finais.append(" | ".join(erros_da_linha) if erros_da_linha else "")
 
-        df["ERROS_VALIDACAO"] = erros_finais
+        df["ERROS"] = erros_finais
         
         try:
             df.to_excel(caminho_excel, index=False)

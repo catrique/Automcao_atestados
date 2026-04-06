@@ -97,6 +97,7 @@ class DataUpdater:
                 "Matricula": item.get('numeroCartaoPonto') or item.get('descricao'),
                 "Nome": pessoa.get('nome'),
                 "Vínculo": vinculo_limpo,
+                "Situação": item.get('situacao') or "NÃO INFORMADO",
                 "CPF": pessoa.get('cpf'),
                 "Cargo": cargo.get('descricao') or "NÃO INFORMADO",
                 "Organograma": lotacao_fisica.get('descricao') or "SEM LOTAÇÃO",
