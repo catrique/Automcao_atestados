@@ -43,7 +43,6 @@ SOC (relatório) → Validação Excel → Google Sheets → Betha Cloud (lança
 | 4 | **Lançamento no Betha** | Lê os registros marcados na planilha e lança cada atestado automaticamente via API Betha |
 | 5 | **Gerenciamento de Credenciais** | Salva de forma segura (criptografada) os acessos do Betha, SOC e Proxy direto no `settings.json` |
 | 6 | **Renovação de Token** | Renova o token de acesso Betha sem precisar reabrir o sistema |
-| 7 | **Notificações WhatsApp** | Envia alertas de status via CallMeBot ao final das automações |
 
 ---
 
@@ -58,7 +57,6 @@ SOC (relatório) → Validação Excel → Google Sheets → Betha Cloud (lança
 | **Google Sheets API** | Leitura e escrita de dados na planilha de controle |
 | **API Betha Cloud** | Envio de atestados e consulta de dados cadastrais |
 | **API SOC** | Download automatizado de relatórios |
-| **CallMeBot API** | Notificações via WhatsApp |
 | **PyInstaller** | Empacotamento em executável `.exe` |
 
 ---
@@ -79,7 +77,6 @@ Automcao_atestados/
 ├── services/                      # Lógica de negócio e integrações
 │   ├── auth_service.py            # Autenticação e criptografia de credenciais
 │   ├── betha_service.py           # Integração completa com a API Betha
-│   ├── callmebot_service.py       # Envio de notificações WhatsApp
 │   ├── sheets_service.py          # Leitura/escrita no Google Sheets
 │   ├── soc_service.py             # Download de relatórios SOC
 │   ├── utils_service.py           # Utilitários gerais (log, formatação etc.)
