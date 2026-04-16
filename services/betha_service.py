@@ -1,4 +1,3 @@
-import base64
 from datetime import datetime
 import mimetypes
 import pandas as pd
@@ -96,10 +95,19 @@ class BethaService:
 
             matricula_encontrada = None
 
-            for item in content:
-                numero_cartao = str(item.get("numeroCartaoPonto", "descricao", " ")).strip()
+            termo_limpo = str(termo).strip()
 
-                if numero_cartao == str(termo).strip():
+            for item in content:
+                v1 = str(item.get("numeroCartaoPonto") or "").strip()
+                v2 = str(item.get("descricao") or "").strip()
+
+                numero_cartao = (
+                    v1
+                    if v1 == termo_limpo
+                    else (v2 if v2 == termo_limpo else (v1 or v2))
+                )
+
+                if numero_cartao == termo_limpo:
                     matricula_encontrada = item
                     break
 
@@ -112,8 +120,8 @@ class BethaService:
 
             return OperationResult.ok(
                 f"✅ Matrícula {termo} encontrada com correspondência exata.",
-                data=id_matricula
-        )
+                data=id_matricula,
+            )
 
         except requests.exceptions.HTTPError as e:
             if e.response.status_code in [401, 403]:
@@ -137,7 +145,8 @@ class BethaService:
         linhas_filtradas = [
             linha
             for linha in dados_planilha
-            if str(linha.get("Pronto para importação", "")).strip().lower() == "sim" and str(linha.get("Status", "")).strip().lower() != "enviado"
+            if str(linha.get("Pronto para importação", "")).strip().lower() == "sim"
+            and str(linha.get("Status", "")).strip().lower() != "enviado"
         ]
 
         if not linhas_filtradas:
@@ -195,7 +204,9 @@ class BethaService:
                     continue
 
                 id_betha = res_matricula.data
-                logger.info(f"✅ Matrícula encontrada para: {matricula_input} (ID: {id_betha})")
+                logger.info(
+                    f"✅ Matrícula encontrada para: {matricula_input} (ID: {id_betha})"
+                )
 
                 def buscar_id_seguro(aba, codigo, col, nome=None, col_n=None):
                     resultado = sheets.buscar_id(
@@ -257,7 +268,9 @@ class BethaService:
                     "motivoConsultaMedica": {"id": id_motivo},
                     "deferido": True,
                     "tipoAfastamento": (
-                        {"id": id_tipo_afastamento} if id_tipo_afastamento else None
+                        {"id": id_tipo_afastamento}
+                        if id_tipo_afastamento and id_tipo_afastamento != 84691
+                        else None
                     ),
                     "profissional": (
                         {"id": id_profissional} if id_profissional else None
@@ -265,7 +278,9 @@ class BethaService:
                     "cidPrincipal": {"id": id_cid} if id_cid else None,
                     "cids": [{"id": id_cid}] if id_cid else [],
                     "localAtendimento": "OUTRO",
-                    "gerarAfastamento ": True,
+                    "gerarAfastamento": (id_tipo_afastamento != 84691),
+                    "acompanhamento": (id_tipo_afastamento == 45583),
+                    "observacao": " | ".join(filter(None, [linha.get("Observação Betha", "").strip(), linha.get("Conecta", "").strip()])),
                     "dataPericia": data_ficha_clinica,
                     "dataEntrega": f"{data_ini} 08:00:00" if data_ini else None,
                     "anexos": lista_anexos,

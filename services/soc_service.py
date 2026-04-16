@@ -766,139 +766,183 @@ class SOCService:
         return OperationResult.fail("⏳ Tempo esgotado: O download do SOC não foi detectado na pasta.")
 
     def processar_relatorio_sem_anexos(self, caminho_excel, output_dir, data_inicio, data_fim) -> OperationResult:
-        """
-        Lê o relatório do SOC (cabeçalho na linha 6, skiprows=5), preenche
-        Médico assistente, CRM e CID de cada ficha — sem baixar anexos.
+            """
+            Versão Corrigida: Processa dados do SOC com salvamento seguro e detecção de colunas.
+            """
+            import shutil
+        
+            pasta_destino = os.path.join(output_dir, "relatorios")
+            os.makedirs(pasta_destino, exist_ok=True)
 
-        Melhorias:
-        - Coluna 'status_processamento': 'pendente' | 'ok' | 'erro' | 'nao_encontrado'
-        - Salva o arquivo a cada ficha concluída (retomada após parada)
-        - Pula fichas já marcadas como 'ok'
-        - Código do funcionário tratado como inteiro para evitar zeros extras
-        - Recovery de frame após erro de Selenium
-        """
-        import shutil
+            ini_fmt = data_inicio.replace('/', '-')
+            fim_fmt = data_fim.replace('/', '-')
+            
+            caminho_final = os.path.join(pasta_destino, f"relatorio_geral_{ini_fmt}_{fim_fmt}.xlsx")
 
-        pasta_destino = os.path.join(output_dir, "relatorios")
-        if not os.path.exists(pasta_destino):
-            os.makedirs(pasta_destino)
+            def salvar_seguro(df_alvo):
+                try:
+                    temp_file = caminho_final.replace(".xlsx", ".tmp_save.xlsx")
+                    
+                    df_to_save = df_alvo.copy()
+                    
+                    for col in df_to_save.columns:
+                        df_to_save[col] = df_to_save[col].astype(str).replace(['nan', 'None', 'NAT'], '')
 
-        ini_fmt = data_inicio.replace('/', '-')
-        fim_fmt = data_fim.replace('/', '-')
-        caminho_final = os.path.join(pasta_destino, f"relatorio_geral_{ini_fmt}_{fim_fmt}.xlsx")
+                    df_to_save.to_excel(temp_file, index=False, engine='openpyxl')
+                    
+                    if os.path.exists(temp_file):
+                        if os.path.exists(caminho_final):
+                            try:
+                                os.remove(caminho_final)
+                            except:
+                                pass 
+                        shutil.move(temp_file, caminho_final)
+                    return True
+                except Exception as e:
+                    logger.error(f"❌ Erro ao gravar no disco: {e}")
+                    return False
 
-        try:
-            if os.path.exists(caminho_final):
-                logger.info(f"🔄 Retomando processamento a partir de: {caminho_final}")
-                df = pd.read_excel(caminho_final)
-            else:
-                df = pd.read_excel(caminho_excel, skiprows=4)
-                df.columns = df.columns.str.strip()
+            try:
+                if os.path.exists(caminho_final):
+                    logger.info(f"🔄 Retomando processamento existente: {caminho_final}")
+                    dtype_settings = {
+                    'Código Funcionário': str,
+                    'CID': str,
+                    'CRM Médico assistente': str,
+                    'status_processamento': str
+                }
+                    df = pd.read_excel(caminho_final, dtype=dtype_settings)
+                else:
+                    logger.info(f"📄 Lendo relatório original do SOC: {caminho_excel}")
+                    df = pd.read_excel(caminho_excel, skiprows=4)
+                    df.columns = df.columns.str.strip()
+                    
+                    if df.empty or len(df.columns) < 3:
+                        logger.warning("⚠️ Cabeçalho na linha 4 parece incorreto. Tentando linha 0...")
+                        df = pd.read_excel(caminho_excel)
+                        df.columns = df.columns.str.strip()
 
-            for col in ['Médico assistente', 'CRM Médico assistente', 'CID', 'status_processamento']:
-                if col not in df.columns:
-                    df[col] = ""
+                if 'Código Funcionário' in df.columns:
+                    df['Código Funcionário'] = df['Código Funcionário'].astype(str).str.replace(r'\.0$', '', regex=True).str.strip()
 
-            df['Código Funcionário'] = (
-                df['Código Funcionário']
-                .astype(str)
-                .str.replace(r'\.0$', '', regex=True)
-                .str.strip()
-                .apply(lambda x: str(int(x)) if x.isdigit() else x)
-            )
+                if df.empty:
+                    return OperationResult.fail("❌ O Excel carregado está vazio. Verifique o arquivo baixado.")
 
-            df.loc[
-                ~df['status_processamento'].isin(['ok', 'nao_encontrado']),
-                'status_processamento'
-            ] = 'pendente'
+                colunas_necessarias = ['Médico assistente', 'CRM Médico assistente', 'CID', 'status_processamento']
+                for col in colunas_necessarias:
+                    if col not in df.columns:
+                        df[col] = ""
 
-            if not os.path.exists(caminho_final):
-                df.to_excel(caminho_final, index=False)
+                if 'Código Funcionário' in df.columns:
+                    df['Código Funcionário'] = (
+                        df['Código Funcionário']
+                        .astype(str)
+                        .str.replace(r'\.0$', '', regex=True)
+                        .str.strip()
+                    )
+                else:
+                    return OperationResult.fail("❌ Coluna 'Código Funcionário' não encontrada no Excel.")
 
-            lista_funcionarios = [
-                c for c in df['Código Funcionário'].unique()
-                if str(c).lower() not in ['nan', 'nat', '']
-            ]
-            total_func = len(lista_funcionarios)
+                df.loc[~df['status_processamento'].isin(['ok', 'nao_encontrado']), 'status_processamento'] = 'pendente'
 
-            for i, cod_func in enumerate(lista_funcionarios):
-                fichas_do_func = df[df['Código Funcionário'] == cod_func]
+                if not salvar_seguro(df):
+                    return OperationResult.fail("❌ Não foi possível criar o arquivo na rede. Verifique permissões.")
 
-                pendentes = fichas_do_func[~fichas_do_func['status_processamento'].isin(['ok', 'nao_encontrado'])]
-                if pendentes.empty:
-                    logger.info(f"⏭️ [{i+1}/{total_func}] Funcionário {cod_func} já processado. Pulando.")
-                    continue
+                lista_funcionarios = [c for c in df['Código Funcionário'].unique() if str(c).lower() not in ['nan', 'nat', '']]
+                total_func = len(lista_funcionarios)
+                
+                logger.info(f"📊 Total de funcionários para validar: {total_func}")
 
-                logger.info(f"\n👥 [{i+1}/{total_func}] Processando funcionário: {cod_func}")
+                for i, cod_func in enumerate(lista_funcionarios):
+                    pendentes = df[(df['Código Funcionário'] == cod_func) & (df['status_processamento'] == 'pendente')]
+                    
+                    if pendentes.empty:
+                        continue
 
-                for index_excel, row in pendentes.iterrows():
-                    try:
-                        def formatar_data(v):
-                            if pd.isna(v) or str(v).strip().lower() in ['nan', 'nat', '']: return ""
-                            try: return pd.to_datetime(v, dayfirst=True).strftime('%d/%m/%Y')
-                            except: return str(v).strip()
+                    logger.info(f"\n👥 [{i+1}/{total_func}] Funcionário: {cod_func}")
+                    
+                    self.navegar_para_tela('1084')
+                    res_busca = self.buscar_funcionario_por_codigo(cod_func)
+                    
+                    if not res_busca.success:
+                        logger.warning(f"⚠️ Funcionário {cod_func} não localizado no SOC.")
+                        df.loc[df['Código Funcionário'] == cod_func, 'status_processamento'] = 'nao_encontrado'
+                        salvar_seguro(df)
+                        continue
 
-                        data_f = formatar_data(row['Data Ficha Clínica'])
-                        data_i = formatar_data(row['Data de Afastamento (de)'])
-                        data_a = formatar_data(row['Data de Afastamento (até)'])
+                    for index_excel, row in pendentes.iterrows():
+                        try:
+                            data_f = ""
+                            for col_data in ['Data Ficha Clínica', 'Data de Emissão', 'Data de Sugestão']:
+                                if col_data in row and pd.notna(row[col_data]):
+                                    val = row[col_data]
+                                    data_f = val.strftime('%d/%m/%Y') if hasattr(val, 'strftime') else str(val)
+                                    break
+                            
+                            if not data_f:
+                                logger.info(f"⏭️ Linha {index_excel} sem data válida. Pulando.")
+                                continue
 
-                        logger.info(f"🔎 Buscando ficha {data_f} | Início {data_i}")
+                            self.wait.until(EC.presence_of_element_located((By.ID, "tabelaFichas")))
+                            linhas_web = self.driver.find_elements(By.XPATH, "//table[@id='tabelaFichas']//tr[td]")
 
-                        self.navegar_para_tela('1084')
-                        res_busca_ficha = self.buscar_funcionario_por_codigo(cod_func)
-                        if not res_busca_ficha.success:
-                            logger.info(f"⚠️ Falha ao buscar funcionário: {res_busca_ficha.message}")
+                            encontrou_na_web = False
+                            for tr in linhas_web:
+                                texto_tr = tr.text.replace('\n', ' ')
+                                if data_f in texto_tr and 'Atestado' in texto_tr:
+                                    link = tr.find_element(By.XPATH, ".//a[contains(@class, 'llinha2')]")
+                                    self.driver.execute_script("arguments[0].click();", link)
+                                    encontrou_na_web = True
+                                    break
+
+                            if encontrou_na_web:
+                                self.wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "span[data-alterado-grava-tela='inputMedico_nomeSolicitante']")))
+                                
+                                dados_medico = self.obter_medico_assistente()
+                                cid_v = self.obter_cid_principal()
+
+                                df.at[index_excel, 'Médico assistente'] = dados_medico.get('nome', '')
+                                df.at[index_excel, 'CRM Médico assistente'] = dados_medico.get('crm', '')
+                                df.at[index_excel, 'CID'] = cid_v
+                                df.at[index_excel, 'status_processamento'] = 'ok'
+                                
+                                logger.info(f"✅ Ficha {data_f} atualizada.")
+
+                                try:
+                                    btn_consultar = WebDriverWait(self.driver, 10).until(
+                                        EC.element_to_be_clickable((By.XPATH, "//img[contains(@src, 'busca.png')]"))
+                                    )
+                                    self.driver.execute_script("arguments[0].click();", btn_consultar)
+                                    self.wait.until(EC.presence_of_element_located((By.ID, "tabelaFichas")))
+                                    logger.info("🔙 Voltou para listagem de fichas.")
+                                except Exception as e_voltar:
+                                    logger.warning(f"⚠️ Não conseguiu voltar via lupa, tentando doAcao browse: {e_voltar}")
+                                    try:
+                                        btn2 = WebDriverWait(self.driver, 10).until(
+                                            EC.element_to_be_clickable((By.XPATH, "//a[contains(@href, \"doAcao('browse')\")]"))
+                                        )
+                                        self.driver.execute_script("arguments[0].click();", btn2)
+                                        self.wait.until(EC.presence_of_element_located((By.ID, "tabelaFichas")))
+                                        logger.info("🔙 Voltou para listagem via doAcao browse.")
+                                    except Exception as e_browse:
+                                        logger.warning(f"⚠️ Fallback: rebuscando funcionário {cod_func}: {e_browse}")
+                                        self._voltar_para_busca_e_reabrir(cod_func)
+                            else:
+                                df.at[index_excel, 'status_processamento'] = 'nao_encontrado'
+                                logger.info(f"❌ Ficha {data_f} não vista na web.")
+
+                            salvar_seguro(df)
+
+                        except Exception as e:
+                            logger.error(f"⚠️ Erro na linha {index_excel}: {e}")
                             df.at[index_excel, 'status_processamento'] = 'erro'
-                            df.to_excel(caminho_final, index=False)
-                            continue
+                            salvar_seguro(df)
+                            self._voltar_ao_frame()
 
-                        self.wait.until(EC.presence_of_element_located((By.ID, "tabelaFichas")))
-                        linhas_web = self.driver.find_elements(By.XPATH, "//table[@id='tabelaFichas']//tr[td]")
+                return OperationResult.ok("Processamento finalizado!", data=caminho_final)
 
-                        linha_alvo_index = -1
-                        for idx, tr in enumerate(linhas_web):
-                            texto_linha = tr.text.replace('\n', ' ').strip()
-                            if (data_f in texto_linha and data_i in texto_linha
-                                    and 'Atestado' in texto_linha
-                                    and ((data_a in texto_linha) if data_a else True)):
-                                linha_alvo_index = idx
-                                break
-
-                        if linha_alvo_index != -1:
-                            logger.info(f"🎯 Correspondência encontrada na linha web {linha_alvo_index}")
-                            link = linhas_web[linha_alvo_index].find_element(By.XPATH, ".//a[contains(@class, 'llinha2')]")
-                            self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", link)
-                            self.driver.execute_script("arguments[0].click();", link)
-
-                            self.wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "span[data-alterado-grava-tela='inputMedico_nomeSolicitante']")))
-
-                            dados_medico = self.obter_medico_assistente()
-                            cid_v = self.obter_cid_principal()
-
-                            df.at[index_excel, 'Médico assistente'] = dados_medico.get('nome', '')
-                            df.at[index_excel, 'CRM Médico assistente'] = dados_medico.get('crm', '')
-                            df.at[index_excel, 'CID'] = cid_v
-                            df.at[index_excel, 'status_processamento'] = 'ok'
-
-                            logger.info(f"✅ CID: {cid_v} | Médico: {dados_medico.get('nome', '')}")
-                            df.to_excel(caminho_final, index=False)
-
-                        else:
-                            logger.info(f"❌ Ficha não encontrada na tabela web.")
-                            df.at[index_excel, 'status_processamento'] = 'nao_encontrado'
-                            df.to_excel(caminho_final, index=False)
-
-                    except Exception as e:
-                        logger.info(f"⚠️ Erro na ficha {index_excel}: {e}")
-                        df.at[index_excel, 'status_processamento'] = 'erro'
-                        df.to_excel(caminho_final, index=False)
-
-            logger.info(f"✅ Arquivo salvo: {caminho_final}")
-            return OperationResult.ok("Processamento concluído!", data=caminho_final)
-
-        except Exception as e:
-            return ErrorTranslator.traduzir(e)
-
+            except Exception as e:
+                return ErrorTranslator.traduzir(e)
 
     def configurar_periodo(self, data_inicio, data_fim) -> OperationResult:
         """

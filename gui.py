@@ -630,7 +630,7 @@ class App(ctk.CTk):
 
         # try:
 
-        #     excel = r"\\10.1.1.50\ADM_Cresst\Atestados_Laudar\30-03-2026\Relatorio_licensas_medicas_30-03-2026.xlsx"
+        #     excel = r"\\10.1.1.50\ADM_Cresst\Atestados_Laudar\09-04-2026\Relatorio_licensas_medicas_09-04-2026.xlsx"
         #     self.log_soc(f"🔍 Validando arquivo: {os.path.basename(excel)}")
         #     output_op = processar_validacoes_excel(excel)
 

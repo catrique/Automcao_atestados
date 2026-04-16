@@ -1,11 +1,7 @@
 import os
 import sys
-import time
-import gspread
 import pandas as pd
-from google.auth.transport.requests import Request
 import unicodedata
-from oauth2client.service_account import ServiceAccountCredentials
 from config.loaders import get_config
 from services.utils_service import OperationResult, ErrorTranslator
 from services.utils_service import obter_identificacao_usuario
