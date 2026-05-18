@@ -693,6 +693,7 @@ class App(ctk.CTk):
                 self.log_soc(f"❌ Erro na validação: {output_op.message}")
 
 
+        #BLOCO PARA TESTES LOCAIS (SEM CONEXÃO COM O SOC, USANDO ARQUIVO ESTÁTICO)
         # try:
 
         #     excel = r"\\10.1.1.50\ADM_Cresst\Atestados_Laudar\09-04-2026\Relatorio_licensas_medicas_09-04-2026.xlsx"

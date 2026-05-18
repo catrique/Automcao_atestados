@@ -209,42 +209,6 @@ class SOCService:
         except Exception as e:
             return OperationResult.fail(f"❌ Erro ao solicitar Excel: {str(e)}")
 
-    # def baixar_ultimo_relatorio(self, tentativas=5) -> OperationResult:
-    #     """
-    #     Tenta buscar e baixar o último relatório com lógica de repetição.
-    #     """
-    #     for i in range(tentativas):
-    #         try:
-    #             logger.info(f"🔍 Buscando relatório (Tentativa {i+1}/{tentativas})...")
-    #             try:
-    #                 botao_procurar = self.wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, "img[name='botao-pesquisar-padrao-soc']")))
-    #                 botao_procurar.click()
-    #             except:
-    #                 self.driver.execute_script("document.getElementsByName('botao-pesquisar-padrao-soc')[0].click();")
-
-    #             time.sleep(3)
-
-    #             self.wait.until(EC.presence_of_element_located((By.ID, "tableProcessos")))
-    #             linhas = self.driver.find_elements(By.XPATH, "//table[@id='tableProcessos']//tr[contains(@id, 'linha-pedido-')]")
-
-    #             if not linhas:
-    #                 continue
-
-    #             ultima_linha = linhas[-1]
-
-    #             try:
-    #                 botao_download = ultima_linha.find_element(By.XPATH, ".//a[contains(text(), 'Download')]")
-    #                 self.driver.execute_script("arguments[0].click();", botao_download)
-    #                 return OperationResult.ok("✅ Download iniciado!")
-    #             except:
-    #                 logger.info(f"⏳ Relatório ainda em processamento...")
-    #                 time.sleep(10)
-
-    #         except Exception as e:
-    #             logger.info(f"⚠️ Erro na tentativa {i+1}: {e}")
-
-    #     return OperationResult.fail("❌ O relatório não ficou pronto para download a tempo.")
-
     def baixar_ultimo_relatorio(self, tentativas=10) -> OperationResult:
         """
         Tenta baixar o relatório, recarregando a página se ainda estiver processando.
@@ -1457,7 +1421,6 @@ class SOCService:
  
             for linha in linhas:
                 celulas = linha.find_elements(By.TAG_NAME, "td")
-                # Estrutura: Código | Nome | Unidade | Setor | Cargo | Matrícula | Situação | Agenda
                 if len(celulas) < 6:
                     continue
  
@@ -1588,7 +1551,6 @@ class SOCService:
         if not res_matricula.success:
             return res_matricula
  
-        # Aguarda o cadastro carregar completamente
         time.sleep(1.5)
  
         res_alterar = self._clicar_alterar()
@@ -1602,10 +1564,6 @@ class SOCService:
         res_situacao = self._selecionar_situacao_inativo()
         if not res_situacao.success:
             return res_situacao
- 
-        # res_gravar = self._gravar_cadastro()
-        # if not res_gravar.success:
-        #     return res_gravar
  
         self._voltar_para_busca_funcionario()
         return OperationResult.ok(f"✅ Servidor matrícula '{matricula}' inativado com sucesso.")
@@ -1638,7 +1596,6 @@ def gerar_relatorio_licensas_medicas(
             time.sleep(1)
             soc.navegar_para_tela("237")
             soc.configurar_periodo(data_inicio, data_fim)
-            # soc.configurar_periodo("13/03/2026", "13/03/2026")
             soc.selecionar_tipo_relatorio()
             soc.selecionar_checkboxes()
             soc.gerar_relatorio_excel()
