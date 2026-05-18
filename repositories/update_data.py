@@ -19,7 +19,7 @@ class DataUpdater:
         self.endpoints = get_config('betha','api','endpoints')
 
         self.FILTROS = {
-            "medico": 'filter=(nome+like+"%2525%2525"+and+profissao+=+"MEDICO")',
+            "medico": 'filter=(nome+like+"%2525%2525"+and+profissao+in+("MEDICO", "DENTISTA"))',
             "cid": 'filter=(codigo+like+"%2525%2525"+or+descricao+like+"%2525%2525")',
             "tipo_afastamento": 'filter=(descricao+like+"%2525%2525")',
             "tipo_atestado": 'filter=(descricao+like+"%2525%2525")',
@@ -41,7 +41,7 @@ class DataUpdater:
 
     def _executar_requisicao(self, url):
         """Faz a chamada GET e lança exceções para o tradutor capturar."""
-        response = requests.get(url, headers=self.headers, timeout=60, proxies=PROXIES_OFF)
+        response = requests.get(url, headers=self.headers, timeout=180, proxies=PROXIES_OFF)
         response.raise_for_status()
         return response.json()
 
@@ -65,7 +65,7 @@ class DataUpdater:
             
             if not dados or 'content' not in dados:
                 break
-                
+             
             todos_registros.extend(dados.get('content', []))
             has_next = dados.get('hasNext', False)
             

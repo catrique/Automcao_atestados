@@ -241,10 +241,23 @@ class BethaService:
                     "TIPOS_AFASTAMENTO", linha.get("Tipo de afastamento"), "descricao"
                 )
 
-                if not all([id_motivo, id_betha]):
-                    logger.info(
-                        f"⚠️ Dados obrigatórios faltando para Ficha {cod_ficha} (Tipo:{id_tipo_atestado}/Motivo:{id_motivo}/Matrícula:{id_betha})"
-                    )
+                campos_obrigatorios = {
+                    "Matrícula": id_betha,
+                    "Profissional": id_profissional,
+                    "CID": id_cid,
+                    "Tipo de Atestado": id_tipo_atestado,
+                    "Motivo da Consulta": id_motivo,
+                    "Tipo de Afastamento": id_tipo_afastamento if id_tipo_afastamento != 84691 else True 
+                }
+
+                campos_faltantes = [nome for nome, valor in campos_obrigatorios.items() if valor is None]
+
+                if campos_faltantes:
+                    erro_msg = f"Campos obrigatórios ausentes: {', '.join(campos_faltantes)}"
+                    logger.info(f"⚠️ Ficha {cod_ficha} ignorada: {erro_msg}")
+                    
+                    sheets.marcar_status_na_planilha(cod_ficha, mensagem_status=f"ERRO | {erro_msg}")
+                    
                     erros += 1
                     continue
 
@@ -267,16 +280,10 @@ class BethaService:
                     "tipo": {"id": id_tipo_atestado},
                     "motivoConsultaMedica": {"id": id_motivo},
                     "deferido": True,
-                    "tipoAfastamento": (
-                        {"id": id_tipo_afastamento}
-                        if id_tipo_afastamento and id_tipo_afastamento != 84691
-                        else None
-                    ),
-                    "profissional": (
-                        {"id": id_profissional} if id_profissional else None
-                    ),
-                    "cidPrincipal": {"id": id_cid} if id_cid else None,
-                    "cids": [{"id": id_cid}] if id_cid else [],
+                    "tipoAfastamento": {"id": id_tipo_afastamento} if id_tipo_afastamento != 84691 else None,
+                    "profissional": {"id": id_profissional},
+                    "cidPrincipal": {"id": id_cid},
+                    "cids": [{"id": id_cid}],
                     "localAtendimento": "OUTRO",
                     "gerarAfastamento": (id_tipo_afastamento != 84691),
                     "acompanhamento": (id_tipo_afastamento == 45583),
@@ -286,8 +293,8 @@ class BethaService:
                     "anexos": lista_anexos,
                     "ausencia": {
                         "tipo": {
-                            "id": 8541,
-                            "descricao": "Licença Médica",
+                            "id": 8541 if id_tipo_afastamento != 45583 else 8759,
+                            "descricao": "Licença Médica" if id_tipo_afastamento != 45583 else "Acompanhamento",
                             "classificacao": "CONSULTA_MEDICA",
                         },
                         "dataInicial": data_ini,

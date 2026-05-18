@@ -11,6 +11,7 @@ from services.betha_service import BethaService
 from services.soc_service import (
     executar_fluxo_soc,
     exportar_relatorio_por_periodo,
+    inativar_servidores,
     retomar_relatorio_por_periodo,
     listar_relatorios_pendentes,
 )
@@ -32,6 +33,7 @@ class App(ctk.CTk):
         self._construir_painel_configuracoes()
         self._construir_painel_exportar_periodo()
         self._construir_painel_datas_soc()
+        self._construir_painel_inativar_servidores()
         self._registrar_servicos_log()
 
 
@@ -82,6 +84,13 @@ class App(ctk.CTk):
         )
         self.btn_lancar_atestado.grid(row=4, column=0, padx=20, pady=10, sticky="ew")
 
+        self.btn_inativar_demitidos = ctk.CTkButton(
+            self.sidebar_frame,
+            text="5. Inativar Demitidos/Exonerados no Betha",
+            command=self.ao_clicar_inativar_demitidos,
+        )
+        self.btn_inativar_demitidos.grid(row=5, column=0, padx=20, pady=10, sticky="ew")
+
         self.btn_limpar_console = ctk.CTkButton(
             self.sidebar_frame,
             text="Limpar Console",
@@ -89,7 +98,7 @@ class App(ctk.CTk):
             hover_color="gray15",
             command=self.ao_clicar_limpar_console,
         )
-        self.btn_limpar_console.grid(row=5, column=0, padx=20, pady=(90, 10), sticky="ew")
+        self.btn_limpar_console.grid(row=6, column=0, padx=20, pady=(90, 10), sticky="ew")
 
         self.btn_atualizar_token = ctk.CTkButton(
             self.sidebar_frame,
@@ -98,7 +107,7 @@ class App(ctk.CTk):
             hover_color="gray20",
             command=self.ao_clicar_atualizar_token,
         )
-        self.btn_atualizar_token.grid(row=6, column=0, padx=20, pady=10, sticky="ew")
+        self.btn_atualizar_token.grid(row=7, column=0, padx=20, pady=10, sticky="ew")
 
         self.btn_abrir_configuracoes = ctk.CTkButton(
             self.sidebar_frame,
@@ -107,7 +116,7 @@ class App(ctk.CTk):
             hover_color="gray20",
             command=self.ao_clicar_abrir_configuracoes,
         )
-        self.btn_abrir_configuracoes.grid(row=7, column=0, padx=20, pady=(10, 20), sticky="ew")
+        self.btn_abrir_configuracoes.grid(row=8, column=0, padx=20, pady=(10, 20), sticky="ew")
 
 
     def _construir_console(self):
@@ -256,7 +265,38 @@ class App(ctk.CTk):
         ctk.CTkLabel(frame, text="", width=80).grid(row=0, column=0, sticky="e")
         return frame
 
+    def _construir_painel_inativar_servidores(self):
+        """Cria o painel de inativação (executado apenas uma vez no __init__)"""
+        self.inativar_frame = ctk.CTkFrame(self, fg_color="transparent")
+        self.inativar_frame.grid(row=0, column=1, padx=20, pady=20, sticky="nsew")
+        self.inativar_frame.grid_remove() 
+        ctk.CTkLabel(
+            self.inativar_frame, 
+            text="Inativação de Servidores (Betha)", 
+            font=("Arial", 16, "bold")
+        ).grid(row=0, column=0, columnspan=2, pady=(0, 20), sticky="w")
 
+        ctk.CTkLabel(self.inativar_frame, text="Caminho do Excel:").grid(
+            row=1, column=0, padx=(5, 5), pady=10, sticky="w"
+        )
+        
+        self.entry_excel = ctk.CTkEntry(
+            self.inativar_frame, 
+            placeholder_text="Cole o caminho do arquivo .xlsx aqui...", 
+            width=400
+        )
+        self.entry_excel.grid(row=1, column=1, padx=5, pady=10, sticky="ew")
+
+        self.btn_processar = ctk.CTkButton(
+            self.inativar_frame,
+            text="Iniciar Processamento",
+            command=self.ao_confirmar_inativar_servidores,
+            fg_color="green",
+            hover_color="darkgreen"
+        )
+        self.btn_processar.grid(row=2, column=1, pady=20, sticky="e")
+        
+        
     def _construir_painel_exportar_periodo(self):
         """Monta o painel completo de exportação por período (novo ou retomar)."""
         self.exportar_frame = ctk.CTkFrame(self, fg_color="transparent")
@@ -277,7 +317,6 @@ class App(ctk.CTk):
         self._construir_subpainel_novo_relatorio()
         self._construir_subpainel_retomar_relatorio()
 
-        # Exibe o sub-painel "novo" por padrão
         self.frame_novo_relatorio.pack(anchor="w", fill="x")
 
     def _construir_seletor_modo_exportacao(self):
@@ -438,6 +477,14 @@ class App(ctk.CTk):
         self.main_container.grid_forget()
         self.exportar_frame.grid(row=0, column=1, padx=20, pady=20, sticky="nsew")
 
+    def _exibir_painel_inativar_servidores(self):
+        """Exibe o painel de inativação de servidores e oculta os outros."""
+        self.console_frame.grid_forget()
+        self.scroll_frame.grid_forget()
+        self.exportar_frame.grid_forget()
+        self.main_container.grid_forget()
+        self.inativar_frame.grid(row=0, column=1, padx=5, pady=10, sticky="nsew")
+
     def _exibir_painel_soc(self):
         """Exibe o painel SOC (datas + console) e oculta os outros."""
         self.console_frame.grid_forget()
@@ -543,6 +590,21 @@ class App(ctk.CTk):
             daemon=True,
         ).start()
 
+    def ao_confirmar_inativar_servidores(self):
+        """Botão [Iniciar Processamento] -> Valida e executa a Thread"""
+        caminho = self.entry_excel.get().strip().replace('"', '')
+        
+        if not caminho:
+            messagebox.showwarning("Atenção", "Preencha o caminho do arquivo Excel (.xlsx) antes de continuar.")
+            return
+
+        self.inativar_frame.grid_forget() 
+        self._exibir_console()
+        threading.Thread(
+            target=self._executar_inativar_demitidos, 
+            args=(caminho,), 
+            daemon=True
+        ).start()
 
     def ao_clicar_lancar_atestado(self):
         """Botão 4 → Confirma com o usuário antes de iniciar o lançamento no Betha."""
@@ -552,6 +614,9 @@ class App(ctk.CTk):
             self._exibir_console()
             threading.Thread(target=self._executar_lancar_atestado, daemon=True).start()
 
+    def ao_clicar_inativar_demitidos(self):
+        """Botão acionado pelo usuário"""
+        self._exibir_painel_inativar_servidores()
 
     def ao_clicar_limpar_console(self):
         """[Limpar Console] → Apaga todo o conteúdo exibido no console."""
@@ -757,6 +822,17 @@ class App(ctk.CTk):
         except Exception as e:
             self.log(f"💥 Erro Crítico no sistema: {str(e)}")
 
+    def _executar_inativar_demitidos(self, excel_path):
+        """Worker: executa a lógica pesada"""
+        self.log(f"📅 Inativando servidores na planilha: {excel_path}")
+        try:
+            res = inativar_servidores(excel_path)
+            if res.success:
+                self.log(f"✅ Sucesso: {res.data}")
+            else:
+                self.log(f"❌ {res.message}")
+        except Exception as e:
+            self.log(f"💥 Erro crítico: {e}")
 
     def log(self, msg):
         """Insere uma mensagem no console principal com timestamp."""
